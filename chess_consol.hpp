@@ -23,7 +23,7 @@ public:
 
     void launch(std::vector<std::string> preMoves);
     void terminate();
-    bool execute(Player player, std::string input);
+    MoveCallback execute(std::string input);
 
 };
 
@@ -46,9 +46,8 @@ ChessConsol::ChessConsol()
 void ChessConsol::launch(std::vector<std::string> preMoves)
 {
     running = true;
-    bool success = true;
+    MoveCallback cb = SUCCESS;
 
-    Player player = WHITE;
     std::string input;
 
     std::cout << std::endl;
@@ -59,13 +58,28 @@ void ChessConsol::launch(std::vector<std::string> preMoves)
 
     while (running == true)
     {
-        if (success == true) // after successful move, step the board system and display
+        if (cb == SUCCESS) // after successful move, step the board system and display
         {
-            board->step();
             board->display();
         }
 
-        std::cout << std::endl << player << " to move: ";
+        if (board->getStatus() != IN_PROGRESS)
+        {
+            std::cout << "Game over: " << board->getStatus() << std::endl;
+            if (board->getStatus() == CHECKMATE)
+            {
+                std::cout << "Winner: " << board->getWinner() << std::endl;
+            }
+            terminate();
+            break;
+        }
+        if (board->getCheck() != PLAYER_NULL)
+        {
+            std::cout << std::endl << board->getCheck() << " is in check " << std::endl;
+        }
+
+        // get input either from user or from premoves
+        std::cout << std::endl << board->getPlayerToMove() << " to move: ";
         if (preMoves.size() == 0)
             std::getline(std::cin, input);
         else
@@ -76,38 +90,18 @@ void ChessConsol::launch(std::vector<std::string> preMoves)
         }
         std::cout << std::endl;
 
-        if (input == "quit")
+        // execute input
+        cb = execute(input);
+
+        if (cb != SUCCESS)
         {
-            terminate();
+            std::cout << "Invalid input: " << cb << std::endl;
         }
-        else 
+        else
         {
-            success = execute(player, input);
-
-            if (success == true)
-            {
-                //std::cout << "Successful move" << std::endl;
-            }
-            else
-            {
-                std::cout << "Invalid input" << std::endl;
-            }
-
-            if (success == true)
-            {
-                if (player == WHITE)
-                {
-                    player = BLACK;
-                }
-                else
-                {
-                    player = WHITE;
-                }
-
-                std::cout << "=================================================" << std::endl;
-                std::cout << std::endl;
-            }
-        } 
+            std::cout << "=================================================" << std::endl;
+            std::cout << std::endl;
+        }
     }
 }
 
@@ -116,30 +110,35 @@ void ChessConsol::terminate()
     running = false;
 }
 
-bool ChessConsol::execute(Player player, std::string input)
+MoveCallback ChessConsol::execute(std::string input)
 {   
-    if (input == "resign")
+    if (input == "quit")
     {
-        
+        terminate();
+        return GAME_OVER;
+    }
+    if (input == "resign")
+    {   
+        return GAME_OVER;
     }
     else if (input == "oo")
     {
-
+        return GAME_OVER;
     }
     else if (input == "ooo")
     {
-
+        return GAME_OVER;
     }
     else // standard input (although must check)
     {
         if (input.length() != 5)
-            return false;
+            return INVALID_INPUT;
 
         if (letterToNum.find(input.at(0)) == letterToNum.end()) // ensure first file letter valid
-            return false;
+            return INVALID_INPUT;
 
         if (letterToNum.find(input.at(3)) == letterToNum.end()) // ensure second file letter valid
-            return false;
+            return INVALID_INPUT;
 
         int file0 = letterToNum[input.at(0)];
         int rank0 = ((int) (input.at(1) - '0')) - 1;
@@ -147,21 +146,10 @@ bool ChessConsol::execute(Player player, std::string input)
         int file1 = letterToNum[input.at(3)];
         int rank1 = ((int) (input.at(4) - '0')) - 1;
 
-        if ((rank0 < 0) || (rank0 > 7)) // ensure first rank valid
-            return false;
-
-        if ((rank1 < 0) || (rank1 > 7)) // ensure second rank valid
-            return false;
-
         if (input.at(2) != ' ') // ensure separated by space, as required by form
-            return false;
+            return INVALID_INPUT;
 
-        bool validation = board->move({{file0, rank0}, {file1, rank1}}); // ensure move is valid in context of chess rules and piece locations
-
-        if (validation == false)
-        {
-            return false;
-        }
+        MoveCallback cb = board->move({{file0, rank0}, {file1, rank1}}); // ensure move is valid in context of chess rules and piece locations
+        return cb;
     }
-    return true;
 }
