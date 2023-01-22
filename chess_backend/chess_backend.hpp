@@ -106,6 +106,7 @@ enum Status
 };
 
 /**************************************************************************************/
+// MOVE STRUCT
 
 struct Move
 {
@@ -127,6 +128,7 @@ bool operator==(Move lh, Move rh)
 }
 
 /**************************************************************************************/
+// SQUARE COVER STRUCT
 
 struct SqrCover
 {
@@ -139,6 +141,7 @@ struct SqrCover
 };
 
 /**************************************************************************************/
+// MOVE CALLBACK ENUM
 
 enum MoveCallback
 {
@@ -162,6 +165,7 @@ std::ostream& operator<<(std::ostream& os, MoveCallback t)
 }
 
 /**************************************************************************************/
+// BOARD CLASS
 
 class Board
 {
@@ -645,9 +649,7 @@ void Board::updateCheckEscapes()
             checkers.push_back(cv.origin);
         }
     }
-
-    //std::cout << "Num checkers: " << checkers.size() << std::endl;
-
+    
     // look at move options for the king
     for (auto& mv : moveTrajs[KING]) // iterate through king move options
     {

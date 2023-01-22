@@ -6,7 +6,7 @@ int main()
 {
     ChessConsol chessConsol;
 
-    std::vector<std::string> preMoves = {
+    std::vector<std::string> preMoves1 = {
         "e2 e3",
         "e7 e5",
         "e3 e4",
