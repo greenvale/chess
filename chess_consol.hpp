@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <unordered_map>
+#include <cctype>
 
 class ChessConsol
 {
@@ -16,6 +17,7 @@ private:
     bool running = false;
 
     std::unordered_map<char, int> letterToNum;
+    std::unordered_map<Piece, char> pieceTag;
 
 public:
 
@@ -24,6 +26,7 @@ public:
     void launch(std::vector<std::string> preMoves);
     void terminate();
     MoveCallback execute(std::string input);
+    void display();
 
 };
 
@@ -41,6 +44,14 @@ ChessConsol::ChessConsol()
     letterToNum['f'] = 5;
     letterToNum['g'] = 6;
     letterToNum['h'] = 7;
+
+    // create dictionary of piece tags
+    pieceTag[PAWN] = 'p';
+    pieceTag[ROOK] = 'r';
+    pieceTag[KNIGHT] = 'n';
+    pieceTag[BISHOP] = 'b';
+    pieceTag[QUEEN] = 'q';
+    pieceTag[KING] = 'k';
 }
 
 void ChessConsol::launch(std::vector<std::string> preMoves)
@@ -60,7 +71,7 @@ void ChessConsol::launch(std::vector<std::string> preMoves)
     {
         if (cb == SUCCESS) // after successful move, step the board system and display
         {
-            board->display();
+            display();
         }
 
         if (board->getStatus() != IN_PROGRESS)
@@ -152,4 +163,43 @@ MoveCallback ChessConsol::execute(std::string input)
         MoveCallback cb = board->move({{file0, rank0}, {file1, rank1}}); // ensure move is valid in context of chess rules and piece locations
         return cb;
     }
+}
+
+void ChessConsol::display()
+{
+    int colour = 0;
+    for (int i = 7; i >= 0; --i)
+    {
+        std::cout << " " << (i+1) << "   ";
+        for (int j = 0; j < 8; ++j)
+        {
+            if (board->getSqrOwner({j,i}) == PLAYER_NULL)
+            {
+                if (colour == 0)
+                    std::cout << " ";
+                else 
+                    std::cout << "#";
+            }
+            else 
+            {
+                if (board->getSqrOwner({j,i}) == WHITE)
+                {
+                    std::cout << (char) toupper(pieceTag[ board->getSqrPiece({j,i}) ]);
+                }
+                else
+                {
+                    std::cout << pieceTag[ board->getSqrPiece({j,i}) ];
+                }
+            }
+            colour = (colour + 1) % 2;
+            std::cout << " ";
+        }
+        std::cout << std::endl;
+        colour = (colour + 1) % 2;
+    }
+    std::cout << std::endl;
+    std::cout << "     ";
+    for (int i = 0; i < 8; ++i)
+        std::cout << static_cast<char>('a'+i) << " ";
+    std::cout << std::endl;
 }

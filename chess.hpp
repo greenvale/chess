@@ -172,9 +172,7 @@ private:
     std::vector<Player> sqrOwners;
 
     // Static rules/assets
-    std::unordered_map<Piece, std::string> whitePieceTags; // to be changed - delegated to consol
-    std::unordered_map<Piece, std::string> blackPieceTags; // to be changed - delegated to consol
-    std::unordered_map<Piece, std::vector<GridVector>> moveOptions;
+    std::unordered_map<Piece, std::vector<GridVector>> moveTrajs;
     std::unordered_map<Piece, bool> moveConstraint;
 
     // Functionality assets & flags
@@ -196,23 +194,22 @@ public:
 
     MoveCallback move(Move pieceMove);
     
+    Piece getSqrPiece(GridVector sqr);
+    Player getSqrOwner(GridVector sqr);
+    bool emptySqr(GridVector sqr);
+    bool validSqr(GridVector sqr);
+
     Player getCheck();
     Player getPlayerToMove();
     Status getStatus();
     Player getWinner();
     
-    void display(); // to be changed - delegated to consol
 
 private:
 
     void step();
 
     int ind(GridVector sqr);
-
-    Piece getSqrPiece(GridVector sqr);
-    Player getSqrOwner(GridVector sqr);
-    bool emptySqr(GridVector sqr);
-    bool validSqr(GridVector sqr);
     void setSqr(GridVector sqr, Piece type, Player owner);
     void clearSqr(GridVector sqr);
     void execute(Move pieceMove);
@@ -224,21 +221,17 @@ private:
 
 };
 
-// ctor for board
+// [PUBLIC] ctor for board
 Board::Board()
 {
 
     // INTIALISE PIECE SETTINGS
     // Pawn
-    whitePieceTags[PAWN] = "P";
-    blackPieceTags[PAWN] = "p";
-    moveOptions[PAWN] = {}; // pawn move options are defined in function
+    moveTrajs[PAWN] = {}; // pawn move options are defined in function
     moveConstraint[PAWN] = true;
 
     // Rook
-    whitePieceTags[ROOK] = "R";
-    blackPieceTags[ROOK] = "r";
-    moveOptions[ROOK] = {
+    moveTrajs[ROOK] = {
         {0,1},
         {0,-1},
         {1,0},
@@ -247,9 +240,7 @@ Board::Board()
     moveConstraint[ROOK] = false;
 
     // Knight
-    whitePieceTags[KNIGHT] = "N";
-    blackPieceTags[KNIGHT] = "n";
-    moveOptions[KNIGHT] = {
+    moveTrajs[KNIGHT] = {
         {-2,-1},
         {-1,-2},
         {2,-1},
@@ -262,9 +253,7 @@ Board::Board()
     moveConstraint[KNIGHT] = true;
 
     // Bishop
-    whitePieceTags[BISHOP] = "B";
-    blackPieceTags[BISHOP] = "b";
-    moveOptions[BISHOP] = {
+    moveTrajs[BISHOP] = {
         {-1,-1},
         {1,-1},
         {-1,1},
@@ -273,9 +262,7 @@ Board::Board()
     moveConstraint[BISHOP] = false;
 
     // Queen
-    whitePieceTags[QUEEN] = "Q";
-    blackPieceTags[QUEEN] = "q";
-    moveOptions[QUEEN] = {
+    moveTrajs[QUEEN] = {
         {0,1},
         {0,-1},
         {1,0},
@@ -288,9 +275,7 @@ Board::Board()
     moveConstraint[QUEEN] = false;
 
     // King
-    whitePieceTags[KING] = "K";
-    blackPieceTags[KING] = "k";
-    moveOptions[KING] = {
+    moveTrajs[KING] = {
         {0,1},
         {0,-1},
         {1,0},
@@ -312,6 +297,7 @@ Board::Board()
 
 }
 
+// [PUBLIC]
 void Board::setup()
 {
     for (int i = 0; i < 8; ++i)
@@ -347,48 +333,57 @@ void Board::setup()
     status = IN_PROGRESS;
     check = PLAYER_NULL;
     winner = PLAYER_NULL;
-    step();
+
+    step(); // initially step system
 }
 
 /* ======================================== Basic operations ======================================== */
 
+// [PRIVATE]
 int Board::ind(GridVector sqr)
 {
     return sqr.rank*8 + sqr.file;
 }
 
+// [PUBLIC]
 Piece Board::getSqrPiece(GridVector sqr)
 {
     return sqrPieces[ind(sqr)];
 }
 
+// [PUBLIC]
 Player Board::getSqrOwner(GridVector sqr)
 {
     return sqrOwners[ind(sqr)];
 }
 
+// [PUBLIC]
 bool Board::emptySqr(GridVector sqr)
 {
     return (sqrPieces[ind(sqr)] == PIECE_NULL);
 }
 
+// [PUBLIC]
 bool Board::validSqr(GridVector sqr)
 {
     return ((sqr.file >= 0) && (sqr.file < 8) && (sqr.rank >= 0) && (sqr.rank < 8));
 }
 
+// [PRIVATE]
 void Board::setSqr(GridVector sqr, Piece type, Player owner)
 {
     sqrPieces[ind(sqr)] = type;
     sqrOwners[ind(sqr)] = owner;
 }
 
+// [PRIVATE]
 void Board::clearSqr(GridVector sqr)
 {
     sqrPieces[ind(sqr)] = PIECE_NULL;
     sqrOwners[ind(sqr)] = PLAYER_NULL;
 }
 
+// [PRIVATE]
 void Board::execute(Move pieceMove)
 {
     Piece piece = sqrPieces[ind(pieceMove.start)];
@@ -404,25 +399,25 @@ void Board::execute(Move pieceMove)
     }
 }
 
-// returns which player in check, if any
+// [PUBLIC] returns which player in check, if any
 Player Board::getCheck() 
 {
     return check;
 }
 
-// returns player to move
+// [PUBLIC] returns player to move
 Player Board::getPlayerToMove()
 {
     return playerToMove;
 }
 
-// returns game status
+// [PUBLIC] returns game status
 Status Board::getStatus()
 {
     return status;
 }
 
-// returns game winner
+// [PUBLIC] returns game winner
 Player Board::getWinner()
 {
     return winner;
@@ -430,7 +425,7 @@ Player Board::getWinner()
 
 /* ======================================== Game mechanics ======================================== */
 
-// PUBLIC : primary function for moving pieces from an outside consol
+// [PUBLIC] primary function for moving pieces from an outside consol
 MoveCallback Board::move(Move pieceMove)
 {
     MoveCallback cb = validateMove(pieceMove);
@@ -443,7 +438,7 @@ MoveCallback Board::move(Move pieceMove)
     return cb;
 }
 
-// step the board system to update status for both players' pieces
+// [PRIVATE] step the board system to update status for both players' pieces
 void Board::step()
 {
     // clear data
@@ -482,7 +477,7 @@ void Board::step()
     */
 }
 
-// returns ray generated by a move direction from a piece origin
+// [PRIVATE] returns ray generated by a move direction from a piece origin
 std::vector<GridVector> Board::getRay(GridVector origin, GridVector dir)
 {
     std::vector<GridVector> ray = {};
@@ -503,7 +498,7 @@ std::vector<GridVector> Board::getRay(GridVector origin, GridVector dir)
     return ray;
 }
 
-// updates the coverage on each square by each players' pieces
+// [PRIVATE] updates the coverage on each square by each players' pieces
 void Board::updateSqrCoverage()
 {
     // iterate through each square of the board
@@ -551,7 +546,7 @@ void Board::updateSqrCoverage()
                     // KNIGHT / KING
                     else
                     {
-                        for (auto& mv : moveOptions[piece])
+                        for (auto& mv : moveTrajs[piece])
                         {
                             if ((validSqr(GridVector(i,j) + mv) == true) && (getSqrOwner(GridVector(i,j) + mv) != owner))
                             {
@@ -562,7 +557,7 @@ void Board::updateSqrCoverage()
                 }
                 else // MOVE UNCONSTRAINED PIECE (Rook, Bishop, Queen)
                 {
-                    for (auto& mv : moveOptions[piece])
+                    for (auto& mv : moveTrajs[piece])
                     {
                         std::vector<GridVector> ray = getRay({i,j}, mv);
 
@@ -638,7 +633,7 @@ void Board::updateSqrCoverage()
     */
 }
 
-// get check escapes (assuming a player is in check)
+// [PRIVATE] get check escapes (assuming a player is in check)
 void Board::updateCheckEscapes()
 {
     // get number of pieces checking the king
@@ -654,7 +649,7 @@ void Board::updateCheckEscapes()
     //std::cout << "Num checkers: " << checkers.size() << std::endl;
 
     // look at move options for the king
-    for (auto& mv : moveOptions[KING]) // iterate through king move options
+    for (auto& mv : moveTrajs[KING]) // iterate through king move options
     {
         GridVector sqr = kingSqr[check] + mv;
         if ((validSqr(sqr)) && (getSqrOwner(sqr) != check)) // if the square is valid and is not occupied by checked player (free or enemy piece)
@@ -708,7 +703,7 @@ void Board::updateCheckEscapes()
     }
 }  
 
-// validates move by checking if the piece at move.start covers move.end
+// [PRIVATE] validates move by checking if the piece at move.start covers move.end
 // ensures that the piece in question isn't pinned
 // if the player is in check, this move must move them out of check
 MoveCallback Board::validateMove(Move pieceMove)
@@ -763,45 +758,4 @@ MoveCallback Board::validateMove(Move pieceMove)
     }
     
     return SUCCESS;
-}
-
-/* ======================================== Board display in console ======================================== */
-
-void Board::display()
-{
-    int colour = 0;
-    for (int i = 7; i >= 0; --i)
-    {
-        std::cout << " " << (i+1) << "   ";
-        for (int j = 0; j < 8; ++j)
-        {
-            if (sqrOwners[ind({j,i})] == PLAYER_NULL)
-            {
-                if (colour == 0)
-                    std::cout << " ";
-                else 
-                    std::cout << "#";
-            }
-            else 
-            {
-                if (sqrOwners[ind({j,i})] == WHITE)
-                {
-                    std::cout << whitePieceTags[ sqrPieces[ind({j,i})] ];
-                }
-                else
-                {
-                    std::cout << blackPieceTags[ sqrPieces[ind({j,i})] ];
-                }
-            }
-            colour = (colour + 1) % 2;
-            std::cout << " ";
-        }
-        std::cout << std::endl;
-        colour = (colour + 1) % 2;
-    }
-    std::cout << std::endl;
-    std::cout << "     ";
-    for (int i = 0; i < 8; ++i)
-        std::cout << static_cast<char>('a'+i) << " ";
-    std::cout << std::endl;
 }
