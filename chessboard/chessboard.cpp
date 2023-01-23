@@ -102,6 +102,7 @@ std::ostream& operator<<(std::ostream& os, MoveCallback t)
         case CHECK_NOT_ESCAPED:     os << "Check not escaped";                  break;
         case PINNED_PIECE:          os << "Piece pinned";                       break;
         case ENEMY_PIECE:           os << "Enemy piece, cannot move";           break;
+        case FRIENDLY_PIECE:        os << "Friendly piece, cannot occupy sqr";  break;
         case ILLEGAL_TRAJ:          os << "Trajectory illegal for this piece";  break;
         case INVALID_INPUT:         os << "Invalid input";                      break;
 
@@ -342,9 +343,10 @@ std::vector<GridVector> Board::getPieceMoveOptions(GridVector sqr)
     {
         for (int i = 0; i < 8; ++i)
             for (int j = 0; j < 8; ++j)
-                for (auto& cv : sqrCoverage[ind({i, j})])
-                    if (cv.origin == sqr)
-                        endSqrs.push_back({i,j});
+                if (getSqrOwner(sqr) != getSqrOwner({i,j})) // check this square is not owned by the player even if it is covered
+                    for (auto& cv : sqrCoverage[ind({i, j})])
+                        if (cv.origin == sqr)
+                            endSqrs.push_back({i,j});
     }
 
     return endSqrs;
@@ -461,11 +463,11 @@ void Board::updateSqrCoverage()
                         }
 
                         // pawn capture
-                        if ((validSqr(GridVector(i - 1,j + sign)) && (getSqrOwner(GridVector(i - 1,j + sign)) == !owner)))
+                        if (validSqr(GridVector(i - 1,j + sign)))
                         {
                             sqrCoverage[ind(GridVector(i - 1,j + sign))].push_back({ {i,j}, piece, owner });
                         }
-                        if ((validSqr(GridVector(i + 1,j + sign))) && (getSqrOwner(GridVector(i + 1,j + sign)) == !owner))
+                        if (validSqr(GridVector(i - 1,j + sign)))
                         {
                             sqrCoverage[ind(GridVector(i + 1,j + sign))].push_back({ {i,j}, piece, owner });
                         }
@@ -475,7 +477,7 @@ void Board::updateSqrCoverage()
                     {
                         for (auto& mv : moveTrajs[piece])
                         {
-                            if ((validSqr(GridVector(i,j) + mv) == true) && (getSqrOwner(GridVector(i,j) + mv) != owner))
+                            if (validSqr(GridVector(i,j) + mv) == true)
                             {
                                 sqrCoverage[ind(GridVector(i,j) + mv)].push_back({ {i,j}, piece, owner }); // the piece covers this square, add to coverage
                             }
@@ -494,6 +496,7 @@ void Board::updateSqrCoverage()
 
                         // determine steps at which different pieces lie (friend pieces, enemy piecees, enemy king)
                         bool stop = false;
+                        bool stopCovering = false;
                         for (int k = 0; k < ray.size(); ++k)
                         {
                             if (getSqrOwner(ray[k]) == owner) // encountered friendly in ray
@@ -510,8 +513,11 @@ void Board::updateSqrCoverage()
                                 stop = true;
                             }
 
-                            if ((friendsInRay.size() == 0) && (enemiesInRay.size() < 2)) // if no friend encountered and is blocking the piece, add cover
+                            if (stopCovering == false) // only add cover if not blocked
                                 sqrCoverage[ind(ray[k])].push_back({ {i,j}, piece, owner });
+
+                            if ((friendsInRay.size() > 0) || (enemiesInRay.size() > 0)) // if enemy or friend is encountered then stop covering as they will block further squares
+                                stopCovering = true;
 
                             if (stop == true) // if enemy king encountered, stop going through ray, no other information is required
                                 break;
@@ -599,7 +605,7 @@ void Board::updateCheckEscapes()
         // look at taking the checking piece
         for (auto& cv : sqrCoverage[ind(checkers[0])]) // iterate through covers on the checking piece's square
         {
-            if ((cv.owner == check) && (cv.origin != kingSqr[check])) // if owned by checked player (includes the king)
+            if ((cv.owner == check) && (cv.origin != kingSqr[check])) // if owned by checked player (excludes the king)
             {
                 checkEscapes.push_back({cv.origin, checkers[0]});
             }
@@ -644,6 +650,10 @@ MoveCallback Board::validateMove(Move pieceMove)
     // ensure that the piece being moved belongs to the player to move
     if (sqrOwners[ind(pieceMove.start)] != playerToMove)
         return ENEMY_PIECE;
+
+    // ensure that end square is not owned by the player to move
+    if (sqrOwners[ind(pieceMove.end)] == playerToMove)
+        return FRIENDLY_PIECE;
 
     // check if owner is in check and whether this move is an available move
     if (check == playerToMove)

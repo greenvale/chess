@@ -83,7 +83,10 @@ void Main::execute(GridVector sqr)
         else 
         {
             // make move on board
-            board->move({activeSqr, sqr});
+            MoveCallback success = board->move({activeSqr, sqr});
+            if (success != SUCCESS)
+                std::cout << "Invalid move" << std::endl;
+            
             activeSqr = GridVector(-1, -1);
 
             // check on game status
@@ -101,10 +104,25 @@ void Main::execute(GridVector sqr)
 
 void Main::updateGrids()
 {
-    // display pieces
+    // display board
+    int colour = 0;
     for (int i = 0; i < 8; ++i) // iterate through file on board (not grid)
+    {
         for (int j = 0; j < 8; ++j) // iterate through rank on board (not grid)
         {
+            if (colour == 0)
+            {
+                grid[WHITE][j*8 + i]->SetBackgroundColour(wxColor(200, 200, 220));
+                grid[BLACK][j*8 + i]->SetBackgroundColour(wxColor(200, 200, 220));
+            }
+            else
+            {
+                grid[WHITE][j*8 + i]->SetBackgroundColour(wxColor(100, 100, 200));
+                grid[BLACK][j*8 + i]->SetBackgroundColour(wxColor(100, 100, 200));
+            }
+                    
+            colour = (colour + 1) % 2;
+
             if (board->getSqrPiece({i,j}) != PIECE_NULL)
             {
                 if (board->getSqrOwner({i,j}) == WHITE)
@@ -124,6 +142,8 @@ void Main::updateGrids()
                 grid[BLACK][(j)*8 + (7-i)]->SetLabel("");
             }
         }
+        colour = (colour + 1) % 2;
+    }
 
     // disable all buttons initially
     for (int i = 0; i < 8; ++i) // iterate through file on board (not grid)
