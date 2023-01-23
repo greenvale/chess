@@ -26,6 +26,7 @@ GridVector operator*(GridVector lh, double rh);
 GridVector operator*(double lh, GridVector rh);
 std::ostream& operator<<(std::ostream& os, GridVector gv);
 bool operator==(GridVector lh, GridVector rh);
+bool operator!=(GridVector lh, GridVector rh);
 
 /**************************************************************************************/
 // PIECE ENUM 
@@ -68,6 +69,7 @@ struct Move
 
 std::ostream& operator<<(std::ostream& os, Move mv);
 bool operator==(Move lh, Move rh);
+bool operator!=(Move lh, Move rh);
 
 /**************************************************************************************/
 // SQUARE COVER STRUCT
@@ -134,6 +136,7 @@ public:
     Player getPlayerToMove();
     Status getStatus();
     Player getWinner();
+    std::vector<GridVector> getPieceMoveOptions(GridVector sqr);
     
 private:
 

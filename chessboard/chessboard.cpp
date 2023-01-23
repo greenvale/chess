@@ -24,6 +24,10 @@ bool operator==(GridVector lh, GridVector rh)
 {
     return ((lh.file == rh.file) && (lh.rank == rh.rank));
 }
+bool operator!=(GridVector lh, GridVector rh)
+{
+    return !(lh == rh);
+}
 
 /**************************************************************************************/
 // PIECE ENUM
@@ -311,6 +315,41 @@ Player Board::getWinner()
     return winner;
 }
 
+// [PUBLIC] returns vector of squares that a piece can be moved to legitimately
+std::vector<GridVector> Board::getPieceMoveOptions(GridVector sqr)
+{
+    std::vector<GridVector> endSqrs = {};
+
+    // check if this piece is pinned
+    for (auto& psqr : pinnedSqrs)
+    {
+        if (psqr == sqr)
+        {
+            return endSqrs; // return empty vector as this piece is pinned
+        }
+    }
+
+    // if player is in check, then this piece must be associated to at least one check escape move
+    if (getSqrOwner(sqr) == check)
+    {
+        for (auto& mv : checkEscapes)
+        {
+            if (mv.start == sqr)
+                endSqrs.push_back(mv.end);
+        }
+    }
+    else
+    {
+        for (int i = 0; i < 8; ++i)
+            for (int j = 0; j < 8; ++j)
+                for (auto& cv : sqrCoverage[ind({i, j})])
+                    if (cv.origin == sqr)
+                        endSqrs.push_back({i,j});
+    }
+
+    return endSqrs;
+}
+
 /* ======================================== Game mechanics ======================================== */
 
 // [PUBLIC] primary function for moving pieces from an outside consol
@@ -560,7 +599,7 @@ void Board::updateCheckEscapes()
         // look at taking the checking piece
         for (auto& cv : sqrCoverage[ind(checkers[0])]) // iterate through covers on the checking piece's square
         {
-            if (cv.owner == check) // if owned by checked player (includes the king)
+            if ((cv.owner == check) && (cv.origin != kingSqr[check])) // if owned by checked player (includes the king)
             {
                 checkEscapes.push_back({cv.origin, checkers[0]});
             }
