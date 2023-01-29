@@ -9,6 +9,9 @@
 #include <cstring>
 #include <algorithm>
 
+namespace chessboard
+{
+
 /**************************************************************************************/
 // GRIDVECTOR STRUCT
 
@@ -91,6 +94,7 @@ enum MoveCallback
 {
     SUCCESS, GAME_OVER, INVALID_SQR, CHECK_NOT_ESCAPED, PINNED_PIECE, ENEMY_PIECE, FRIENDLY_PIECE, ILLEGAL_TRAJ, INVALID_INPUT
 };
+
 std::ostream& operator<<(std::ostream& os, MoveCallback t);
 
 /**************************************************************************************/
@@ -100,7 +104,6 @@ class Board
 {
 
 private:
-
     std::vector<Piece> sqrPieces;
     std::vector<Player> sqrOwners;
 
@@ -121,7 +124,6 @@ private:
     std::unordered_map<Player, std::vector<GridVector>> doublePushedPawn;
 
 public:
-
     Board();
     void setup();
 
@@ -139,7 +141,6 @@ public:
     std::vector<GridVector> getPieceMoveOptions(GridVector sqr);
     
 private:
-
     void step();
 
     int ind(GridVector sqr);
@@ -153,3 +154,5 @@ private:
     MoveCallback validateMove(Move pieceMove);
 
 };
+
+}

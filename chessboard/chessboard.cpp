@@ -1,5 +1,8 @@
 #include "chessboard.h"
 
+namespace chessboard
+{
+
 /**************************************************************************************/
 // GRIDVECTOR STRUCT
 
@@ -693,4 +696,6 @@ MoveCallback Board::validateMove(Move pieceMove)
     }
     
     return SUCCESS;
+}
+
 }

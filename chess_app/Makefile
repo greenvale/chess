@@ -15,11 +15,11 @@ OBJS := $(SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
 $(PROG_NAME): $(OBJS) $(BUILD_DIR)/chessboard.o
 	g++ -o $@ $^ $(EXT_LIBS)
 
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
-	g++ -c -o $@ $< $(EXT_INCLUDES)
-
 $(BUILD_DIR)/chessboard.o: ../chessboard/chessboard.cpp
 	g++ -c -o ./build/chessboard.o ../chessboard/chessboard.cpp
+
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp $(BUILD_DIR)/chessboard.o
+	g++ -c -o $@ $< $(EXT_INCLUDES)
 
 clean: 
 	rm *.o $(PROG_NAME) $(BUILD_DIR)/*.o
