@@ -12,14 +12,11 @@
 namespace chessboard
 {
 
-/**************************************************************************************/
-// GRIDVECTOR STRUCT
-
 struct GridVector
 {
     int file, rank;
 
-    GridVector() {}
+    GridVector() : file (999), rank(999) {}
     GridVector(const int& file, const int& rank) : file(file), rank(rank) {}
 
 };
@@ -31,17 +28,11 @@ std::ostream& operator<<(std::ostream& os, GridVector gv);
 bool operator==(GridVector lh, GridVector rh);
 bool operator!=(GridVector lh, GridVector rh);
 
-/**************************************************************************************/
-// PIECE ENUM 
-
 enum Piece {
     PAWN, ROOK, KNIGHT, BISHOP, QUEEN, KING, PIECE_NULL
 };
 
 std::ostream& operator<<(std::ostream& os, Piece t);
-
-/**************************************************************************************/
-// PLAYER ENUM 
 
 enum Player {
     WHITE, BLACK, PLAYER_NULL
@@ -50,16 +41,10 @@ enum Player {
 std::ostream& operator<<(std::ostream& os, Player t);
 Player operator!(Player p);
 
-/**************************************************************************************/
-// STATUS ENUM 
-
 enum Status
 {
     IN_PROGRESS, CHECKMATE, DRAW, STALEMATE
 };
-
-/**************************************************************************************/
-// MOVE STRUCT
 
 struct Move
 {
@@ -74,31 +59,47 @@ std::ostream& operator<<(std::ostream& os, Move mv);
 bool operator==(Move lh, Move rh);
 bool operator!=(Move lh, Move rh);
 
-/**************************************************************************************/
-// SQUARE COVER STRUCT
+enum CoverType
+{
+    PUSH, CAPTURE, PUSH_CAPTURE, RAY_BEYOND_KING
+};
 
 struct SqrCover
 {
     GridVector origin;
     Piece piece;
     Player owner;
+    CoverType type;
 
     SqrCover() {}
-    SqrCover(GridVector origin, Piece piece, Player owner) : origin(origin), piece(piece), owner(owner) {}
+    SqrCover(GridVector origin, Piece piece, Player owner, CoverType type) : origin(origin), piece(piece), owner(owner), type(type) {}
 };
 
-/**************************************************************************************/
-// MOVE CALLBACK ENUM
+struct PinRay
+{
+    GridVector on;
+    GridVector by;
+
+    PinRay() {}
+    PinRay(GridVector on, GridVector by) : on(on), by(by) {}
+};
+
+struct CheckRay
+{
+    GridVector on;
+    GridVector by;
+    std::vector<GridVector> raySqrs;
+
+    CheckRay() {}
+    CheckRay(GridVector on, GridVector by, std::vector<GridVector> raySqrs) : on(on), by(by), raySqrs(raySqrs) {}
+};
 
 enum MoveCallback
 {
-    SUCCESS, GAME_OVER, INVALID_SQR, CHECK_NOT_ESCAPED, PINNED_PIECE, ENEMY_PIECE, FRIENDLY_PIECE, ILLEGAL_TRAJ, INVALID_INPUT
+    SUCCESS, FAILURE
 };
 
 std::ostream& operator<<(std::ostream& os, MoveCallback t);
-
-/**************************************************************************************/
-// BOARD CLASS
 
 class Board
 {
@@ -108,27 +109,29 @@ private:
     std::vector<Player> sqrOwners;
 
     // Static rules/assets
-    std::unordered_map<Piece, std::vector<GridVector>> moveTrajs;
+    std::unordered_map<Piece, std::vector<GridVector>> moveVectors;
     std::unordered_map<Piece, bool> moveConstraint;
 
-    // Functionality assets & flags
+    // Flags
     Player playerToMove;
     Player winner;
     Status status;
     Player check;
+
     std::vector<std::vector<SqrCover>> sqrCoverage;
     std::unordered_map<Player, GridVector> kingSqr;
-    std::vector<GridVector> pinnedSqrs;
-    std::vector<GridVector> checkRaySqrs;
-    std::vector<Move> checkEscapes;
+
+    std::vector<PinRay> pinRays;
+    std::vector<CheckRay> checkRays;
+
+    std::vector<std::vector<Move>> validMoves;
+
     std::unordered_map<Player, std::vector<GridVector>> doublePushedPawn;
 
 public:
     Board();
     void setup();
 
-    MoveCallback move(Move pieceMove);
-    
     Piece getSqrPiece(GridVector sqr);
     Player getSqrOwner(GridVector sqr);
     bool emptySqr(GridVector sqr);
@@ -138,7 +141,9 @@ public:
     Player getPlayerToMove();
     Status getStatus();
     Player getWinner();
-    std::vector<GridVector> getPieceMoveOptions(GridVector sqr);
+    std::vector<Move> getValidMoves(GridVector sqr);
+    
+    MoveCallback requestMove(Move pieceMove);
     
 private:
     void step();
@@ -146,12 +151,19 @@ private:
     int ind(GridVector sqr);
     void setSqr(GridVector sqr, Piece type, Player owner);
     void clearSqr(GridVector sqr);
-    void execute(Move pieceMove);
+    void executeMove(Move pieceMove);
+
+    bool isCoveredByPlr(GridVector sqr, Player plr);
+    bool isCoveredBySqr(GridVector on, GridVector by);
+    bool isPinned(GridVector sqr);
+    std::vector<SqrCover> getCoversByPlr(GridVector sqr, Player plr);
+
+    std::vector<GridVector> castRay(GridVector origin, GridVector dir);
 
     void updateSqrCoverage();
-    std::vector<GridVector> getRay(GridVector origin, GridVector dir);
-    void updateCheckEscapes();
-    MoveCallback validateMove(Move pieceMove);
+    void updateKingRays(Piece dirPiece, Player plr);
+    void updateValidMoves(Player plr);
+    
 
 };
 

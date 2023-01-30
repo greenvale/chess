@@ -99,15 +99,8 @@ std::ostream& operator<<(std::ostream& os, MoveCallback t)
 {
     switch(t)
     {
-        case SUCCESS:               os << "Success";                            break;
-        case GAME_OVER:             os << "Game over";                          break;
-        case INVALID_SQR:           os << "Invalid square";                     break;
-        case CHECK_NOT_ESCAPED:     os << "Check not escaped";                  break;
-        case PINNED_PIECE:          os << "Piece pinned";                       break;
-        case ENEMY_PIECE:           os << "Enemy piece, cannot move";           break;
-        case FRIENDLY_PIECE:        os << "Friendly piece, cannot occupy sqr";  break;
-        case ILLEGAL_TRAJ:          os << "Trajectory illegal for this piece";  break;
-        case INVALID_INPUT:         os << "Invalid input";                      break;
+        case SUCCESS: os << "Success"; break;
+        case FAILURE: os << "Failure"; break;
 
     }
     return os; 
@@ -116,71 +109,33 @@ std::ostream& operator<<(std::ostream& os, MoveCallback t)
 /**************************************************************************************/
 // BOARD
 
-
 // [PUBLIC] ctor for board
 Board::Board()
 {
 
     // INTIALISE PIECE SETTINGS
     // Pawn
-    moveTrajs[PAWN] = {}; // pawn move options are defined in function
+    moveVectors[PAWN] = {}; // pawn move options are defined in function
     moveConstraint[PAWN] = true;
 
     // Rook
-    moveTrajs[ROOK] = {
-        {0,1},
-        {0,-1},
-        {1,0},
-        {-1,0},
-    };
+    moveVectors[ROOK] = { {0,1}, {0,-1}, {1,0}, {-1,0} };
     moveConstraint[ROOK] = false;
 
     // Knight
-    moveTrajs[KNIGHT] = {
-        {-2,-1},
-        {-1,-2},
-        {2,-1},
-        {-1,2},
-        {-2,1},
-        {1,-2},
-        {2,1},
-        {1,2},
-    };
+    moveVectors[KNIGHT] = { {-2,-1}, {-1,-2}, {2,-1}, {-1,2}, {-2,1}, {1,-2}, {2,1}, {1,2} };
     moveConstraint[KNIGHT] = true;
 
     // Bishop
-    moveTrajs[BISHOP] = {
-        {-1,-1},
-        {1,-1},
-        {-1,1},
-        {1,1},
-    };
+    moveVectors[BISHOP] = { {-1,-1}, {1,-1}, {-1,1}, {1,1} };
     moveConstraint[BISHOP] = false;
 
     // Queen
-    moveTrajs[QUEEN] = {
-        {0,1},
-        {0,-1},
-        {1,0},
-        {-1,0},
-        {-1,-1},
-        {1,-1},
-        {-1,1},
-        {1,1},
-    };
+    moveVectors[QUEEN] = { {0,1}, {0,-1}, {1,0}, {-1,0}, {-1,-1}, {1,-1}, {-1,1}, {1,1} };
     moveConstraint[QUEEN] = false;
 
     // King
-    moveTrajs[KING] = {
-        {0,1},
-        {0,-1},
-        {1,0},
-        {-1,0},
-        {-1,-1},
-        {1,-1},
-        {-1,1},
-        {1,1},
-    };
+    moveVectors[KING] = { {0,1}, {0,-1}, {1,0}, {-1,0}, {-1,-1}, {1,-1}, {-1,1}, {1,1} };
     moveConstraint[KING] = true;
 
     // Initialise empty board
@@ -188,9 +143,8 @@ Board::Board()
     sqrOwners = std::vector<Player>(64, PLAYER_NULL);
 
     // functionality assets
-    // create covereage vectors for each square
     sqrCoverage = std::vector<std::vector<SqrCover>>(64, std::vector<SqrCover>());
-
+    validMoves = std::vector<std::vector<Move>>(64, std::vector<Move>());
 }
 
 // [PUBLIC]
@@ -232,8 +186,6 @@ void Board::setup()
 
     step(); // initially step system
 }
-
-/* ======================================== Basic operations ======================================== */
 
 // [PRIVATE]
 int Board::ind(GridVector sqr)
@@ -280,7 +232,7 @@ void Board::clearSqr(GridVector sqr)
 }
 
 // [PRIVATE]
-void Board::execute(Move pieceMove)
+void Board::executeMove(Move pieceMove)
 {
     Piece piece = sqrPieces[ind(pieceMove.start)];
     Player owner = sqrOwners[ind(pieceMove.start)];
@@ -319,107 +271,44 @@ Player Board::getWinner()
     return winner;
 }
 
-// [PUBLIC] returns vector of squares that a piece can be moved to legitimately
-std::vector<GridVector> Board::getPieceMoveOptions(GridVector sqr)
+// [PUBLIC]
+std::vector<Move> Board::getValidMoves(GridVector sqr)
 {
-    std::vector<GridVector> endSqrs = {};
-
-    // check if this piece is pinned
-    for (auto& psqr : pinnedSqrs)
-    {
-        if (psqr == sqr)
-        {
-            return endSqrs; // return empty vector as this piece is pinned
-        }
-    }
-
-    // if player is in check, then this piece must be associated to at least one check escape move
-    if (getSqrOwner(sqr) == check)
-    {
-        for (auto& mv : checkEscapes)
-        {
-            if (mv.start == sqr)
-                endSqrs.push_back(mv.end);
-        }
-    }
-    else
-    {
-        for (int i = 0; i < 8; ++i)
-            for (int j = 0; j < 8; ++j)
-                if (getSqrOwner(sqr) != getSqrOwner({i,j})) // check this square is not owned by the player even if it is covered
-                    for (auto& cv : sqrCoverage[ind({i, j})])
-                        if (cv.origin == sqr)
-                            endSqrs.push_back({i,j});
-    }
-
-    return endSqrs;
+    return validMoves[ind(sqr)];
 }
 
-/* ======================================== Game mechanics ======================================== */
-
-// [PUBLIC] primary function for moving pieces from an outside consol
-MoveCallback Board::move(Move pieceMove)
+// [PUBLIC] primary function for moving pieces from an outside program
+MoveCallback Board::requestMove(Move pieceMove)
 {
-    MoveCallback cb = validateMove(pieceMove);
+    MoveCallback cb = FAILURE;
+    for (auto& mv : validMoves[ind(pieceMove.start)])
+    {
+        if (mv == pieceMove)
+        {
+            cb = SUCCESS;
+        }
+    }
+    
     if (cb == SUCCESS)
     {
-        execute(pieceMove);
-        step();
+        executeMove(pieceMove);
         playerToMove = !playerToMove;
+        step();
     }
     return cb;
 }
 
-// [PRIVATE] step the board system to update status for both players' pieces
-void Board::step()
-{
-    // clear data
-    for (int i = 0; i < 64; ++i)
-    {
-        sqrCoverage[i].clear(); // refresh the coverage vectors for each square to update square coverage
-    }
-    check = PLAYER_NULL;
-    checkRaySqrs.clear();    
-    pinnedSqrs.clear();
-    checkEscapes.clear();
-
-    // update the square coverage after a move to assess current position on board
-    updateSqrCoverage();        
-
-    // if a player is in check, generate the possible check escapes
-    if (check != PLAYER_NULL)
-    {
-        updateCheckEscapes();
-
-        if (checkEscapes.size() == 0)
-        {
-            status = CHECKMATE;
-            winner = !check;
-        }
-    }
-
-    /*
-    std::cout << "Player in check: " << check << std::endl;
-    for (auto& sqr : pinnedSqrs)
-        std::cout << "Pinned sqr: " << sqr << std::endl;
-    for (auto& sqr : checkRaySqrs)
-        std::cout << "Check ray sqr: " << sqr << std::endl;
-    for (auto& mv : checkEscapes)
-        std::cout << "Check escape move: " << mv << std::endl;
-    */
-}
-
-// [PRIVATE] returns ray generated by a move direction from a piece origin
-std::vector<GridVector> Board::getRay(GridVector origin, GridVector dir)
+// [PRIVATE] returns ray generated by a move vector from a piece origin
+std::vector<GridVector> Board::castRay(GridVector origin, GridVector vec)
 {
     std::vector<GridVector> ray = {};
     bool stop = false;
     int step = 1;
     while (stop == false)
     {
-        if (validSqr(origin + dir*step) == true)
+        if (validSqr(origin + vec*step) == true)
         {
-            ray.push_back(origin + dir*step);
+            ray.push_back(origin + vec*step);
             step++;
         }
         else
@@ -428,6 +317,82 @@ std::vector<GridVector> Board::getRay(GridVector origin, GridVector dir)
         }
     }
     return ray;
+}
+
+// [PRIVATE] returns true if a square is covered by a player
+bool Board::isCoveredByPlr(GridVector sqr, Player plr)
+{
+    for (auto& cvr : sqrCoverage[ind(sqr)])
+    {
+        if (cvr.owner == plr)
+            return true;
+    }
+    return false;
+}
+
+// [PRIVATE] returns player's pieces covering this square
+std::vector<SqrCover> Board::getCoversByPlr(GridVector sqr, Player plr)
+{
+    std::vector<SqrCover> cvrs = {};
+    for (auto& cvr : sqrCoverage[ind(sqr)])
+    {
+        if (cvr.owner == plr)
+            cvrs.push_back(cvr);
+    }
+    return cvrs;
+}
+
+// [PRIVATE] returns true if a square is covered by another square
+bool Board::isCoveredBySqr(GridVector on, GridVector by)
+{
+    for (auto& cvr : sqrCoverage[ind(on)])
+    {
+        if (cvr.origin == by && (cvr.type == CAPTURE || cvr.type == PUSH_CAPTURE || cvr.type == RAY_BEYOND_KING))
+            return true;
+    }
+    return false;
+}
+
+// [PRIVATE] returns true if piece on given sqr is pinned
+bool Board::isPinned(GridVector sqr)
+{
+    for (auto& pin : pinRays)
+    {
+        if (pin.on == sqr)
+            return true;
+    }
+    return false;
+}
+
+// [PRIVATE] steps the system by clearing all previous data and recalculating position to get coverage of pieces, king threats, etc.
+void Board::step()
+{
+    // clear data
+    for (int i = 0; i < 8; ++i)
+    {
+        for (int j = 0; j < 8; ++j)
+        {
+            sqrCoverage[ind({i,j})].clear(); // refresh the coverage vectors for each square to update square coverage
+            validMoves[ind({i,j})].clear();
+        }
+    }
+    check = PLAYER_NULL;
+    pinRays.clear();    
+    checkRays.clear();
+
+    // update the square coverage after a move to assess current position on board
+    updateSqrCoverage();
+
+    // determine if player to move is in check
+    if (isCoveredByPlr(kingSqr[playerToMove], !playerToMove))
+    {
+        check = playerToMove;
+    }
+
+    updateKingRays(ROOK, playerToMove); // file/rank rays
+    updateKingRays(BISHOP, playerToMove); // diagonal rays
+
+    updateValidMoves(playerToMove);
 }
 
 // [PRIVATE] updates the coverage on each square by each players' pieces
@@ -456,246 +421,217 @@ void Board::updateSqrCoverage()
                         // pawn push
                         if ((validSqr(GridVector(i,j + sign))) && (getSqrOwner(GridVector(i,j + sign)) == PLAYER_NULL))
                         {
-                            sqrCoverage[ind(GridVector(i,j + sign))].push_back({ {i,j}, piece, owner });
+                            sqrCoverage[ind(GridVector(i,j + sign))].push_back({ {i,j}, piece, owner, PUSH });
 
                             // double pawn push
                             if ((((owner == WHITE) && (j == 1)) || ((owner == BLACK) && (j == 6))) && (validSqr(GridVector(i,j + 2*sign))) && (getSqrOwner(GridVector(i,j + 2*sign)) == PLAYER_NULL))
                             {
-                                sqrCoverage[ind(GridVector(i,j + 2*sign))].push_back({ {i,j}, piece, owner });
+                                sqrCoverage[ind(GridVector(i,j + 2*sign))].push_back({ {i,j}, piece, owner, PUSH });
                             }
                         }
 
                         // pawn capture
                         if (validSqr(GridVector(i - 1,j + sign)))
                         {
-                            sqrCoverage[ind(GridVector(i - 1,j + sign))].push_back({ {i,j}, piece, owner });
+                            sqrCoverage[ind(GridVector(i - 1,j + sign))].push_back({ {i,j}, piece, owner, CAPTURE });
                         }
                         if (validSqr(GridVector(i - 1,j + sign)))
                         {
-                            sqrCoverage[ind(GridVector(i + 1,j + sign))].push_back({ {i,j}, piece, owner });
+                            sqrCoverage[ind(GridVector(i + 1,j + sign))].push_back({ {i,j}, piece, owner, CAPTURE });
                         }
                     }
                     // KNIGHT / KING
                     else
                     {
-                        for (auto& mv : moveTrajs[piece])
+                        for (auto& vec : moveVectors[piece])
                         {
-                            if (validSqr(GridVector(i,j) + mv) == true)
+                            if (validSqr(GridVector(i,j) + vec))
                             {
-                                sqrCoverage[ind(GridVector(i,j) + mv)].push_back({ {i,j}, piece, owner }); // the piece covers this square, add to coverage
+                                sqrCoverage[ind(GridVector(i,j) + vec)].push_back({ {i,j}, piece, owner, PUSH_CAPTURE }); // the piece covers this square, add to coverage
                             }
                         }
                     }
                 }
-                else // MOVE UNCONSTRAINED PIECE (Rook, Bishop, Queen)
+                else // MOVE UNCONSTRAINED PIECE (ROOK, BISHOP, QUEEN)
                 {
-                    for (auto& mv : moveTrajs[piece])
+                    for (auto& vec : moveVectors[piece])
                     {
-                        std::vector<GridVector> ray = getRay({i,j}, mv);
+                        std::vector<GridVector> ray = castRay({i,j}, vec); // returns a vector of squares from origin in direction of move trajectory
 
-                        std::vector<int> friendsInRay = {};
-                        std::vector<int> enemiesInRay = {};
-                        int enemyKingInRay = -1;
-
-                        // determine steps at which different pieces lie (friend pieces, enemy piecees, enemy king)
-                        bool stop = false;
-                        bool stopCovering = false;
-                        for (int k = 0; k < ray.size(); ++k)
+                        bool enemyKingInRay = false;
+                        for (auto& sqr : ray)
                         {
-                            if (getSqrOwner(ray[k]) == owner) // encountered friendly in ray
+                            if (enemyKingInRay == false)
+                                sqrCoverage[ind(sqr)].push_back({ {i,j}, piece, owner, PUSH_CAPTURE });
+                            else
+                                sqrCoverage[ind(sqr)].push_back({ {i,j}, piece, owner, RAY_BEYOND_KING });
+                            
+                            if (getSqrOwner(sqr) != PLAYER_NULL)
                             {
-                                friendsInRay.push_back(k);
+                                if (sqr == kingSqr[!getSqrOwner({i,j})])
+                                {
+                                    enemyKingInRay = true; // if enemy king in ray then keep going to find unsafe squares behind king
+                                }
+                                else
+                                {
+                                    break; // stop loop if enemy/friendly piece enounctered on sqr in ray
+                                }
                             }
-                            else if ((getSqrPiece(ray[k]) != KING) && (getSqrOwner(ray[k]) == !owner)) // encountered enemy but not king in ray
+                            else if (enemyKingInRay == true)
                             {
-                                enemiesInRay.push_back(k);
+                                break; // stop loop after going 1 square beyond enemy king
                             }
-                            else if ((getSqrPiece(ray[k]) == KING) && (getSqrOwner(ray[k]) == !owner)) // encountered king in ray
-                            {
-                                enemyKingInRay = k;
-                                stop = true;
-                            }
-
-                            if (stopCovering == false) // only add cover if not blocked
-                                sqrCoverage[ind(ray[k])].push_back({ {i,j}, piece, owner });
-
-                            if ((friendsInRay.size() > 0) || (enemiesInRay.size() > 0)) // if enemy or friend is encountered then stop covering as they will block further squares
-                                stopCovering = true;
-
-                            if (stop == true) // if enemy king encountered, stop going through ray, no other information is required
-                                break;
-                        }
-
-                        if ((enemyKingInRay > -1) && (friendsInRay.size() == 0) && (enemiesInRay.size() == 0))
-                        {
-                            // checking king
-                            if (check != owner)
-                                check = !owner;
-                            //else
-                            //    std::cout << "CATASTROPHIC ERROR - BOTH KINGS HAVE BECOME CHECKED!" << std::endl;
-
-
-                            // include check ray squares
-                            for (int k = 0; k < enemyKingInRay; ++k)
-                            {
-                                checkRaySqrs.push_back(ray[k]);
-                            }
-                        }
-                        else if ((enemyKingInRay > -1) && (friendsInRay.size() == 0) && (enemiesInRay.size() == 1) && (enemiesInRay[0] < enemyKingInRay))
-                        {
-                            // pin this piece
-                            pinnedSqrs.push_back(ray[enemiesInRay[0]]);
                         }
                     }
                 }
             }
         }
     }
-    
-    /*
-    for (int i = 0; i < 8; ++i)
-    {
-        for (int j = 0; j < 8; ++j)
-        {
-            std::cout << "Square: " << GridVector(i,j) << ": ";
-            for (auto& sqrs : sqrCoverage[ind({i,j})])
-            {
-                std::cout << sqrs.origin << " - " << sqrs.piece << " - " << sqrs.owner << "; ";
-            }
-            std::cout << std::endl;
-        }
-    }
-    
-    */
 }
 
-// [PRIVATE] get check escapes (assuming a player is in check)
-void Board::updateCheckEscapes()
+// [PRIVATE] updates the pin rays and check rays coming from the king of a given player given a "dirPiece"
+// dirPiece must be either Rook (files/ranks) or Bishop (diagonals) and is used to cast rays from the king's position to identify enemy unconstrained pieces
+// these pieces could be checking the king or pinning pieces in front of the king
+void Board::updateKingRays(Piece dirPiece, Player plr)
 {
-    // get number of pieces checking the king
-    std::vector<GridVector> checkers = {};
-    for (auto& cv : sqrCoverage[ind(kingSqr[check])]) // iterate through covers on the checked king's square
+    for (auto& vec : moveVectors[dirPiece]) // iterate through diagonal vectors
     {
-        if (cv.owner == !check)
+        std::vector<GridVector> ray = castRay(kingSqr[plr], vec);
+
+        bool stop = false;
+        int friendInRay = -1;
+        
+        for (int k = 0; k < ray.size(); ++k) // loop through squares in ray
         {
-            checkers.push_back(cv.origin);
-        }
-    }
-    
-    // look at move options for the king
-    for (auto& mv : moveTrajs[KING]) // iterate through king move options
-    {
-        GridVector sqr = kingSqr[check] + mv;
-        if ((validSqr(sqr)) && (getSqrOwner(sqr) != check)) // if the square is valid and is not occupied by checked player (free or enemy piece)
-        {
-            bool sqrFree = true;
-            for (auto& cv : sqrCoverage[ind(sqr)]) // check the square is not covered by enemy piece
+            if (getSqrOwner(ray[k]) == plr)
             {
-                if (cv.owner == !check)
+                // friendly piece in ray, if first piece encountered then record, else stop traversal
+                if (friendInRay > -1)
+                    stop = true;
+                else
+                    friendInRay = k;
+            }
+            else if (getSqrOwner(ray[k]) == !plr && (getSqrPiece(ray[k]) == dirPiece || getSqrPiece(ray[k]) == QUEEN))
+            {
+                if (friendInRay > -1)
                 {
-                    sqrFree = false;
+                    // friend blocking ray
+                    pinRays.push_back({ray[friendInRay], ray[k]});
                 }
-            }
-            if (sqrFree == true)
-            {
-                checkEscapes.push_back({kingSqr[check], sqr});
-            }
-        }
-    }
-
-    if (checkers.size() == 1)
-    {
-        // look at taking the checking piece
-        for (auto& cv : sqrCoverage[ind(checkers[0])]) // iterate through covers on the checking piece's square
-        {
-            if ((cv.owner == check) && (cv.origin != kingSqr[check])) // if owned by checked player (excludes the king)
-            {
-                checkEscapes.push_back({cv.origin, checkers[0]});
-            }
-        }
-
-        // look at blocking the checking piece
-        // check this piece isn't pinned
-        for (auto& sqr : checkRaySqrs) // iterate through ray squares
-        {
-            for (auto& cv : sqrCoverage[ind(sqr)]) // iterate through covers on square
-            {
-                if ((cv.owner == check) && (cv.piece != KING)) // check if cover belongs to checked player and that this isn't the king
+                else
                 {
-                     // check piece isn't pinned
-                    bool isPinned = false;
-                    for (auto& psqr : pinnedSqrs)
+                    // no friend blocking ray therefore in check (this is already calculated by sqrCoverage)
+                    std::vector<GridVector> raySqrs = {};
+                    for (int l = 0; l < k; ++l)
                     {
-                        if (sqr == psqr)
-                            isPinned = true;
+                        raySqrs.push_back(ray[l]);
                     }
-                    if (isPinned == false)
-                        checkEscapes.push_back({cv.origin, sqr});
+                    checkRays.push_back({kingSqr[plr], ray[k], raySqrs});
                 }
+                stop = true;
             }
+            else if (getSqrOwner(ray[k]) == !plr)
+            {
+                // non-threatening enemy piece in ray
+                stop = true;
+            }
+
+            if (stop == true)
+                break;
         }
     }
-}  
+}
 
-// [PRIVATE] validates move by checking if the piece at move.start covers move.end
-// ensures that the piece in question isn't pinned
-// if the player is in check, this move must move them out of check
-MoveCallback Board::validateMove(Move pieceMove)
+// [PRIVATE]
+void Board::updateValidMoves(Player plr)
 {
-    // if game over, then return false
-    if (status != IN_PROGRESS) 
-        return GAME_OVER;
-
-    // ensure that both squares provided in move are valid squares on the board and are indexed properly
-    if ( (!(validSqr(pieceMove.start))) || (!(validSqr(pieceMove.end))) )
-        return INVALID_SQR;
-
-    // ensure that the piece being moved belongs to the player to move
-    if (sqrOwners[ind(pieceMove.start)] != playerToMove)
-        return ENEMY_PIECE;
-
-    // ensure that end square is not owned by the player to move
-    if (sqrOwners[ind(pieceMove.end)] == playerToMove)
-        return FRIENDLY_PIECE;
-
-    // check if owner is in check and whether this move is an available move
     if (check == playerToMove)
     {
-        bool escapesCheck = false;
-        for (auto& mv : checkEscapes)
+        // find ways to get out of check
+        std::vector<SqrCover> checkerCvrs = getCoversByPlr(kingSqr[playerToMove], !playerToMove); // get pieces that are checking the king
+        
+        // method 1 : move the king to a square that is not defended by enemy (including taking piece checking or other enemy piece)
+        for (auto& vec : moveVectors[KING])
         {
-            if (pieceMove == mv)
-                escapesCheck = true;
-        }
-        if (escapesCheck == false)
-            return CHECK_NOT_ESCAPED;
-    }
-    else // if player not in check
-    {
-        // check that this piece covers this square
-        bool covers = false;
-        for (auto& cvr : sqrCoverage[ind(pieceMove.end)])
-        {
-            if (cvr.origin == pieceMove.start)
+            if (validSqr(kingSqr[playerToMove] + vec) && getSqrOwner(kingSqr[playerToMove] + vec) != playerToMove && (isCoveredByPlr(kingSqr[playerToMove] + vec, !plr) == false))
             {
-                covers = true;
+                validMoves[ind(kingSqr[playerToMove])].push_back(Move(kingSqr[playerToMove], kingSqr[playerToMove] + vec));
             }
         }
-        if (covers == false)
-            return ILLEGAL_TRAJ;
-
-        // check if piece is pinned
-        bool isPinned = false;
-        for (auto& sqr : pinnedSqrs)
+        if (checkerCvrs.size() == 1)
         {
-            if (pieceMove.start == sqr)
-                isPinned = true;
+            // method 2 : take the checking piece with something other than the king (if only 1 piece checking)
+            std::vector<SqrCover> cvrsOnChecker = getCoversByPlr(checkerCvrs[0].origin, playerToMove);
+            for (auto& cvr : cvrsOnChecker)
+            {
+                if (isPinned(cvr.origin) == false && (cvr.type == CAPTURE || cvr.type == PUSH_CAPTURE)) // a pinned piece cannot be pinned by the single checker of the king, can't be PUSH or RAY_BEYOND_KING
+                {
+                    validMoves[ind(cvr.origin)].push_back(Move(cvr.origin, checkerCvrs[0].origin));
+                }
+            }
+
+            // method 3 : blocking the check if it originates from unconstrained piece (if only 1 piece checking)
+            // assume the size of the checkRay vector is at most 1 (otherwise there would be multiple checkers)
+            if (checkRays.size() == 1)
+            {
+                for (auto& sqr : checkRays[0].raySqrs)
+                {
+                    std::vector<SqrCover> blocksOnSqr = getCoversByPlr(sqr, playerToMove);
+                    for (auto& cvr : blocksOnSqr)
+                    {
+                        if (cvr.origin != kingSqr[playerToMove] && (cvr.type == PUSH || cvr.type == PUSH_CAPTURE)) // cannot be blocked by king itself
+                        {
+                            validMoves[ind(cvr.origin)].push_back(Move(cvr.origin, sqr));
+                        }
+                    }
+                }
+            }
+            else
+            {
+                std::cout << "Rays size: " << checkRays.size() << std::endl;
+            }
         }
-        if (isPinned == true)
-            return PINNED_PIECE;
+    }   
+    else
+    {
+        // not in check, therefore iterate through all squares and record moves that cover this square
+        for (int i = 0; i < 8; ++i)
+        {
+            for (int j = 0; j < 8; ++j)
+            {
+                Piece piece = getSqrPiece({i,j});
+                Player owner = getSqrOwner({i,j});
+
+                if (owner != plr) // make sure this square is not owned by plr
+                {
+                    for (auto& cvr : sqrCoverage[ind({i,j})])
+                    {
+                        if (cvr.owner == plr) // make sure this cover is owned by plr
+                        {
+                            if (cvr.piece == PAWN)
+                            {
+                                if (owner == PLAYER_NULL && cvr.type == PUSH)
+                                {
+                                    // if pawn then push move only allowed if square empty
+                                    validMoves[ind(cvr.origin)].push_back(Move(cvr.origin, {i,j}));
+                                }
+                                else if (owner == !plr && cvr.type == CAPTURE)
+                                {
+                                    // capture move only allowed if square occupied
+                                    validMoves[ind(cvr.origin)].push_back(Move(cvr.origin, {i,j}));
+                                }
+                            }
+                            else
+                            {
+                                // for all non-pawn pieces, the capture and push are coincidental
+                                validMoves[ind(cvr.origin)].push_back(Move(cvr.origin, {i,j}));
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
-    
-    return SUCCESS;
 }
 
 }

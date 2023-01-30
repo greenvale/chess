@@ -3,13 +3,14 @@
 #include <thread>
 #include <functional>
 
+
 struct Comm
 {
     std::function<void(chessboard::Move)> requestMove;
 };
 
 /**************************************************************************************************************/
-// CHESS BOARD
+// BOARD PANEL
 
 class BoardPanel : public wxPanel
 {
@@ -22,8 +23,8 @@ private:
     chessboard::Board* board;
     chessboard::Player playerView;
 
-    wxColor light = wxColor(100, 100, 100);
-    wxColor dark = wxColor(200, 200, 200);
+    wxColour light = wxColour(100, 100, 100);
+    wxColour dark = wxColour(200, 200, 200);
 
     std::unordered_map<chessboard::Piece, wxImage> whitePieceImgs;
     std::unordered_map<chessboard::Piece, wxImage> blackPieceImgs;
@@ -36,6 +37,8 @@ private:
     
     chessboard::GridVector pos2gv(int x, int y);
     chessboard::GridVector ind2gv(int x, int y);
+    int gv2i(chessboard::GridVector gv);
+    int gv2j(chessboard::GridVector gv);
 
 public:
     BoardPanel(wxWindow* parent, chessboard::Board* board, chessboard::Player playerView, Comm* comm);
@@ -43,7 +46,6 @@ public:
 
     void step();
     void setPanelDims(int x, int y, int width);
-    void render(wxPaintDC& dc);
 
     void onMouseDown(wxMouseEvent& evt); 
     void onMouseUp(wxMouseEvent& evt);
@@ -146,63 +148,119 @@ void BoardPanel::onMouseUp(wxMouseEvent& evt)
     {
         if (this->gvUp == this->gvDown)
         {
-            // clicked on the square
+            // CLICKED on square
             if (this->activeSqr == false)
             {
                 // no current active square, activate this square
-                this->startSqr = this->gvUp;
-                this->activeSqr = true;
-                std::cout << "Activated " << this->gvUp << std::endl;
+                if (this->board->getSqrOwner(this->gvUp) == this->playerView)
+                {
+                    this->startSqr = this->gvUp;
+                    this->activeSqr = true;
+                    std::cout << "Activated " << this->gvUp << std::endl;
+                }
             }
             else
             {
-                // square already active, check that it is not same square
+                // if the clicked square is the same as the active square then cancel the activation
                 if (this->gvUp == this->startSqr)
                 {
                     // cancelling move
                     std::cout << "Cancelled move" << std::endl;
+                    this->activeSqr = false;
                 }
                 else
                 {
-                    this->endSqr = this->gvUp;
-                    std::cout << "(Select) Requested move: " << this->startSqr << ", " << this->endSqr << std::endl;
-                    if (this->board->getSqrOwner(this->startSqr) == this->playerView)
+                    
+                    if (this->board->getSqrOwner(this->gvUp) == this->playerView)
                     {
-                        //chessboard::MoveCallback moveCallback = this->board->move({this->startSqr, this->endSqr});
-                        //std::cout << "Move callback: " << moveCallback << std::endl;
-                        this->comm->requestMove(chessboard::Move(this->startSqr, this->endSqr));
+                        // if alternative square has been activated instead
+                        this->startSqr = this->gvUp;
+                        std::cout << "Alternative activated: " << this->gvUp << std::endl;
                     }
-                    else
+                    else //if (this->board->getSqrOwner(this->startSqr) == this->playerView)
                     {
-                        std::cout << "Square not owned by player to view" << std::endl;
+                        // if square that isn't owned by player in view is clicked, check if it is option for this square
+                        this->endSqr = this->gvUp;
+                        std::cout << "(Select) Checking move: " << this->startSqr << ", " << this->endSqr << std::endl;
+
+                        // check if move is valid move for this square
+                        std::vector<chessboard::Move> validMoves = this->board->getValidMoves(this->startSqr);
+                        bool validMove = false;
+                        for (auto& mv : validMoves)
+                        {
+                            if (mv.end == this->endSqr)
+                            {
+                                validMove = true;
+                            }
+                        }
+
+                        if (validMove == true)
+                        {
+                            // if valid move, then make request on comm for the main panel to communicate with board
+                            this->comm->requestMove(chessboard::Move(this->startSqr, this->endSqr));
+                            this->activeSqr = false;
+                            std::cout << "Move is valid, placing request through comm" << std::endl;
+                        }
+                        else
+                        {
+                            // if not valid move then do nothing, keep active square active
+                            std::cout << "Move not valid" << std::endl;
+                        }                    
                     }
+                    //else
+                    //{
+                       // std::cout << "Square not owned by player with view" << std::endl;
+                    //}
                 }
-                this->activeSqr = false;
             }
         }
         else
         {
-            // dragged piece from one square to another
+            // DRAGGED piece from one square to another
             this->startSqr = this->gvDown;
             this->endSqr = this->gvUp;
-            std::cout << "(Drag) Requested move: " << this->startSqr << ", " << this->endSqr << std::endl;
+            std::cout << "(Drag) Checking move: " << this->startSqr << ", " << this->endSqr << std::endl;
+
             if (this->board->getSqrOwner(this->startSqr) == this->playerView)
             {
-                //chessboard::MoveCallback moveCallback = this->board->move({this->startSqr, this->endSqr});
-                //std::cout << "Move callback: " << moveCallback << std::endl;
-                this->comm->requestMove(chessboard::Move(this->startSqr, this->endSqr));
+                // check if move is valid move for this square
+                std::vector<chessboard::Move> validMoves = this->board->getValidMoves(this->startSqr);
+                bool validMove = false;
+                for (auto& mv : validMoves)
+                {
+                    if (mv.end == this->endSqr)
+                    {
+                        validMove = true;
+                    }
+                }
+
+                if (validMove == true)
+                {
+                    // if valid move, then make request on comm for the main panel to communicate with board
+                    this->comm->requestMove(chessboard::Move(this->startSqr, this->endSqr));
+                    std::cout << "Move is valid, placing request through comm" << std::endl;
+                }
+                else
+                {
+                    // if not valid move then do nothing, keep active square active
+                    std::cout << "Move not valid" << std::endl;
+                } 
             }
             else
             {
-                std::cout << "Square not owned by player to view" << std::endl;
+                std::cout << "Square not owned by player holding view" << std::endl;
             }
         }
     }
     else
     {
         // mouse trajectory not valid
-        std::cout << "Invalid mouse trajectory" << std::endl;
+        std::cout << "Invalid mouse trajectory / not player holding view's turn to go" << std::endl;
     }
+
+    // refresh window to call onPaint method
+    this->Refresh();
+    this->Update();
 }
 
 void BoardPanel::onMouseMove(wxMouseEvent& evt)
@@ -218,12 +276,7 @@ void BoardPanel::onMouseMove(wxMouseEvent& evt)
 void BoardPanel::onPaint(wxPaintEvent& evt)
 {
     wxPaintDC dc(this);
-    this->render(dc);
-}
 
-// draws the board and pieces where they currently stand
-void BoardPanel::render(wxPaintDC& dc)
-{
     // create squares on board
     int color = 1;
     for (int i = 0; i < 8; ++i)
@@ -238,8 +291,7 @@ void BoardPanel::render(wxPaintDC& dc)
             {
                 dc.SetBrush(dark);
             }
-            dc.SetPen(wxPen(wxColor(0,0,0), 0));
-            
+            dc.SetPen(wxPen(wxColour(0,0,0), 1, wxPENSTYLE_TRANSPARENT));
             dc.DrawRectangle(j*(this->size/8), i*(this->size/8), this->size/8, this->size/8);
             
             color = (color + 1) % 2;
@@ -265,6 +317,26 @@ void BoardPanel::render(wxPaintDC& dc)
                     dc.DrawBitmap( resized, j*(this->size/8), i*(this->size/8) );
                 }
             }
+        }
+    }
+
+    if (activeSqr == true)
+    {
+        int i = this->gv2i(this->startSqr);
+        int j = this->gv2j(this->startSqr);
+        dc.SetBrush(wxBrush(wxColour(255,255,255), wxBRUSHSTYLE_TRANSPARENT));
+        dc.SetPen(wxPen(wxColour(255,0,0), 3));
+        dc.DrawRectangle(j*(this->size/8), i*(this->size/8), this->size/8, this->size/8);
+
+        // show available squares
+        std::vector<chessboard::Move> availableMoves = this->board->getValidMoves(this->startSqr);
+        for (auto& mv : availableMoves)
+        {
+            i = this->gv2i(mv.end);
+            j = this->gv2j(mv.end);
+            dc.SetBrush(wxBrush(wxColour(255,255,255), wxBRUSHSTYLE_TRANSPARENT));
+            dc.SetPen(wxPen(wxColour(0,0,255), 3));
+            dc.DrawRectangle(j*(this->size/8), i*(this->size/8), this->size/8, this->size/8);
         }
     }
 }
@@ -293,7 +365,7 @@ chessboard::GridVector BoardPanel::pos2gv(int x, int y)
     }
 }
 
-// returns position within panel to grid vector for sqr
+// index to grid vector for sqr
 chessboard::GridVector BoardPanel::ind2gv(int i, int j)
 {
     if (i < 0 || i > 7 || j < 0 || j > 7)
@@ -311,6 +383,46 @@ chessboard::GridVector BoardPanel::ind2gv(int i, int j)
     else
     {
         return chessboard::GridVector(999, 999); // return invalid grid vector
+    }
+}
+
+int BoardPanel::gv2i(chessboard::GridVector gv)
+{
+    if (gv.rank < 0 || gv.rank > 7)
+    {
+        return 999;
+    }
+    if (playerView == chessboard::WHITE)
+    {
+        return 7-gv.rank;
+    }
+    else if (playerView == chessboard::BLACK)
+    {
+        return gv.rank;
+    }
+    else
+    {
+        return 999; // return invalid grid vector
+    }
+}
+
+int BoardPanel::gv2j(chessboard::GridVector gv)
+{
+    if (gv.file < 0 || gv.file > 7)
+    {
+        return 999;
+    }
+    if (playerView == chessboard::WHITE)
+    {
+        return gv.file;
+    }
+    else if (playerView == chessboard::BLACK)
+    {
+        return 7-gv.file;
+    }
+    else
+    {
+        return 999; // return invalid grid vector
     }
 }
 
@@ -353,7 +465,7 @@ MainPanel::MainPanel(wxWindow* parent) : wxPanel(parent, wxID_ANY, wxPoint(0, 0)
     comm->requestMove = [&](chessboard::Move mv)
     { 
         std::cout << "Move: " << mv << std::endl;
-        chessboard::MoveCallback moveCallback = this->board->move(mv);
+        chessboard::MoveCallback moveCallback = this->board->requestMove(mv);
         std::cout << "Move callback: " << moveCallback << std::endl;
         this->processMoveCallback(moveCallback);
     };
