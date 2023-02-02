@@ -77,23 +77,14 @@ struct SqrCover
     SqrCover(GridVector origin, Piece piece, Player owner, CoverType type) : origin(origin), piece(piece), owner(owner), type(type) {}
 };
 
-struct PinRay
-{
-    GridVector on;
-    GridVector by;
-
-    PinRay() {}
-    PinRay(GridVector on, GridVector by) : on(on), by(by) {}
-};
-
-struct CheckRay
+struct Ray
 {
     GridVector on;
     GridVector by;
     std::vector<GridVector> raySqrs;
 
-    CheckRay() {}
-    CheckRay(GridVector on, GridVector by, std::vector<GridVector> raySqrs) : on(on), by(by), raySqrs(raySqrs) {}
+    Ray() {}
+    Ray(GridVector on, GridVector by, std::vector<GridVector> raySqrs) : on(on), by(by), raySqrs(raySqrs) {}
 };
 
 enum MoveCallback
@@ -119,12 +110,13 @@ private:
     Player winner;
     Status status;
     Player check;
+    std::unordered_map<Player, bool> kingMoved;
 
     std::vector<std::vector<SqrCover>> sqrCoverage;
     std::unordered_map<Player, GridVector> kingSqr;
 
-    std::vector<PinRay> pinRays;
-    std::vector<CheckRay> checkRays;
+    std::vector<Ray> pinRays;
+    std::vector<Ray> checkRays;
 
     std::vector<std::vector<Move>> validMoves;
 
