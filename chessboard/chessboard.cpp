@@ -80,6 +80,21 @@ Player operator!(Player p)
 }
 
 /**************************************************************************************/
+// STATUS ENUM
+
+std::ostream& operator<<(std::ostream& os, Status sts)
+{
+    switch(sts)
+    {
+        case IN_PROGRESS: os << "In progress"; break;
+        case CHECKMATE: os << "Checkmate"; break;
+        case DRAW: os << "Draw"; break;
+        case STALEMATE: os << "Stalemate"; break;
+    }
+    return os;
+}
+
+/**************************************************************************************/
 // MOVE STRUCT
 
 std::ostream& operator<<(std::ostream& os, Move mv)
@@ -179,7 +194,7 @@ void Board::setup()
     kingSqr[WHITE] = GridVector({4,0});
     kingSqr[BLACK] = GridVector({4,7});
 
-    playerToMove = WHITE;
+    plrToMove = WHITE;
     status = IN_PROGRESS;
     check = PLAYER_NULL;
     winner = PLAYER_NULL;
@@ -241,9 +256,9 @@ void Board::executeMove(Move pieceMove)
     sqrOwners[ind(pieceMove.end)] = owner;
 
     // keep track of the king positions
-    if (pieceMove.start == kingSqr[playerToMove])
+    if (pieceMove.start == kingSqr[plrToMove])
     {
-        kingSqr[playerToMove] = pieceMove.end;
+        kingSqr[plrToMove] = pieceMove.end;
     }
 }
 
@@ -256,7 +271,7 @@ Player Board::getCheck()
 // [PUBLIC] returns player to move
 Player Board::getPlayerToMove()
 {
-    return playerToMove;
+    return plrToMove;
 }
 
 // [PUBLIC] returns game status
@@ -292,7 +307,7 @@ MoveCallback Board::requestMove(Move pieceMove)
     if (cb == SUCCESS)
     {
         executeMove(pieceMove);
-        playerToMove = !playerToMove;
+        plrToMove = !plrToMove;
         step();
     }
     return cb;
@@ -364,6 +379,17 @@ bool Board::isPinned(GridVector sqr)
     return false;
 }
 
+// [PUBLIC] returns number of valid moves for the player to move
+int Board::getNumValidMoves()
+{
+    int n = 0;
+    for (auto& mvs : validMoves)
+    {
+        n += mvs.size();
+    }
+    return n;
+}
+
 // [PRIVATE] steps the system by clearing all previous data and recalculating position to get coverage of pieces, king threats, etc.
 void Board::step()
 {
@@ -384,15 +410,32 @@ void Board::step()
     updateSqrCoverage();
 
     // determine if player to move is in check
-    if (isCoveredByPlr(kingSqr[playerToMove], !playerToMove))
+    if (isCoveredByPlr(kingSqr[plrToMove], !plrToMove))
     {
-        check = playerToMove;
+        check = plrToMove;
     }
 
-    updateKingRays(ROOK, playerToMove); // file/rank rays
-    updateKingRays(BISHOP, playerToMove); // diagonal rays
+    // update king rays for player to move (pinned rays, check rays)
+    updateKingRays(ROOK); // file/rank rays
+    updateKingRays(BISHOP); // diagonal rays
 
-    updateValidMoves(playerToMove);
+    updateValidMoves(); // update valid moves for player to move
+
+    // if no valid moves then game is over
+    if (getNumValidMoves() == 0)
+    {
+        if (check == plrToMove)
+        {
+            // check mate
+            status = CHECKMATE;
+            winner = !plrToMove;
+        }
+        else
+        {
+            // stale mate
+            status = STALEMATE;
+        }
+    }
 }
 
 // [PRIVATE] updates the coverage on each square by each players' pieces
@@ -492,18 +535,18 @@ void Board::updateSqrCoverage()
 // [PRIVATE] updates the pin rays and check rays coming from the king of a given player given a "dirPiece"
 // dirPiece must be either Rook (files/ranks) or Bishop (diagonals) and is used to cast rays from the king's position to identify enemy unconstrained pieces
 // these pieces could be checking the king or pinning pieces in front of the king
-void Board::updateKingRays(Piece dirPiece, Player plr)
+void Board::updateKingRays(Piece dirPiece)
 {
     for (auto& vec : moveVectors[dirPiece]) // iterate through diagonal vectors
     {
-        std::vector<GridVector> ray = castRay(kingSqr[plr], vec);
+        std::vector<GridVector> ray = castRay(kingSqr[plrToMove], vec);
 
         bool stop = false;
         int friendInRay = -1;
         
         for (int k = 0; k < ray.size(); ++k) // loop through squares in ray
         {
-            if (getSqrOwner(ray[k]) == plr)
+            if (getSqrOwner(ray[k]) == plrToMove)
             {
                 // friendly piece in ray, if first piece encountered then record, else stop traversal
                 if (friendInRay > -1)
@@ -511,12 +554,13 @@ void Board::updateKingRays(Piece dirPiece, Player plr)
                 else
                     friendInRay = k;
             }
-            else if (getSqrOwner(ray[k]) == !plr && (getSqrPiece(ray[k]) == dirPiece || getSqrPiece(ray[k]) == QUEEN))
+            else if (getSqrOwner(ray[k]) == !plrToMove && (getSqrPiece(ray[k]) == dirPiece || getSqrPiece(ray[k]) == QUEEN))
             {
                 if (friendInRay > -1)
                 {
                     // friend blocking ray
                     pinRays.push_back({ray[friendInRay], ray[k]});
+                    std::cout << "Pin on" << ray[k] << std::endl;
                 }
                 else
                 {
@@ -526,11 +570,11 @@ void Board::updateKingRays(Piece dirPiece, Player plr)
                     {
                         raySqrs.push_back(ray[l]);
                     }
-                    checkRays.push_back({kingSqr[plr], ray[k], raySqrs});
+                    checkRays.push_back({kingSqr[plrToMove], ray[k], raySqrs});
                 }
                 stop = true;
             }
-            else if (getSqrOwner(ray[k]) == !plr)
+            else if (getSqrOwner(ray[k]) == !plrToMove)
             {
                 // non-threatening enemy piece in ray
                 stop = true;
@@ -543,28 +587,28 @@ void Board::updateKingRays(Piece dirPiece, Player plr)
 }
 
 // [PRIVATE]
-void Board::updateValidMoves(Player plr)
+void Board::updateValidMoves()
 {
-    if (check == playerToMove)
+    if (check == plrToMove)
     {
         // find ways to get out of check
-        std::vector<SqrCover> checkerCvrs = getCoversByPlr(kingSqr[playerToMove], !playerToMove); // get pieces that are checking the king
+        std::vector<SqrCover> checkerCvrs = getCoversByPlr(kingSqr[plrToMove], !plrToMove); // get pieces that are checking the king
         
-        // method 1 : move the king to a square that is not defended by enemy (including taking piece checking or other enemy piece)
+        // method 1 : move the king to a square that is not defended by enemy (including taking piece checking (if next to) or other enemy piece that isn't defended)
         for (auto& vec : moveVectors[KING])
         {
-            if (validSqr(kingSqr[playerToMove] + vec) && getSqrOwner(kingSqr[playerToMove] + vec) != playerToMove && (isCoveredByPlr(kingSqr[playerToMove] + vec, !plr) == false))
+            if (validSqr(kingSqr[plrToMove] + vec) && getSqrOwner(kingSqr[plrToMove] + vec) != plrToMove && (isCoveredByPlr(kingSqr[plrToMove] + vec, !plrToMove) == false))
             {
-                validMoves[ind(kingSqr[playerToMove])].push_back(Move(kingSqr[playerToMove], kingSqr[playerToMove] + vec));
+                validMoves[ind(kingSqr[plrToMove])].push_back(Move(kingSqr[plrToMove], kingSqr[plrToMove] + vec));
             }
         }
         if (checkerCvrs.size() == 1)
         {
             // method 2 : take the checking piece with something other than the king (if only 1 piece checking)
-            std::vector<SqrCover> cvrsOnChecker = getCoversByPlr(checkerCvrs[0].origin, playerToMove);
+            std::vector<SqrCover> cvrsOnChecker = getCoversByPlr(checkerCvrs[0].origin, plrToMove);
             for (auto& cvr : cvrsOnChecker)
             {
-                if (isPinned(cvr.origin) == false && (cvr.type == CAPTURE || cvr.type == PUSH_CAPTURE)) // a pinned piece cannot be pinned by the single checker of the king, can't be PUSH or RAY_BEYOND_KING
+                if (isPinned(cvr.origin) == false && (cvr.type == CAPTURE || cvr.type == PUSH_CAPTURE) && (cvr.piece != KING)) // a pinned piece cannot be pinned by the single checker of the king, can't be PUSH or RAY_BEYOND_KING
                 {
                     validMoves[ind(cvr.origin)].push_back(Move(cvr.origin, checkerCvrs[0].origin));
                 }
@@ -576,10 +620,10 @@ void Board::updateValidMoves(Player plr)
             {
                 for (auto& sqr : checkRays[0].raySqrs)
                 {
-                    std::vector<SqrCover> blocksOnSqr = getCoversByPlr(sqr, playerToMove);
+                    std::vector<SqrCover> blocksOnSqr = getCoversByPlr(sqr, plrToMove);
                     for (auto& cvr : blocksOnSqr)
                     {
-                        if (cvr.origin != kingSqr[playerToMove] && (cvr.type == PUSH || cvr.type == PUSH_CAPTURE)) // cannot be blocked by king itself
+                        if (cvr.origin != kingSqr[plrToMove] && (cvr.type == PUSH || cvr.type == PUSH_CAPTURE)) // cannot be blocked by king itself
                         {
                             validMoves[ind(cvr.origin)].push_back(Move(cvr.origin, sqr));
                         }
@@ -595,6 +639,7 @@ void Board::updateValidMoves(Player plr)
     else
     {
         // not in check, therefore iterate through all squares and record moves that cover this square
+        // only calculate legal moves for non-king pieces that are NOT PINNED
         for (int i = 0; i < 8; ++i)
         {
             for (int j = 0; j < 8; ++j)
@@ -602,11 +647,11 @@ void Board::updateValidMoves(Player plr)
                 Piece piece = getSqrPiece({i,j});
                 Player owner = getSqrOwner({i,j});
 
-                if (owner != plr) // make sure this square is not owned by plr
+                if (owner != plrToMove) // make sure this square is not owned by plr to move
                 {
                     for (auto& cvr : sqrCoverage[ind({i,j})])
                     {
-                        if (cvr.owner == plr) // make sure this cover is owned by plr
+                        if (cvr.owner == plrToMove && isPinned(cvr.origin) == false) // make sure this cover is owned by plr to move and is NOT PINNED
                         {
                             if (cvr.piece == PAWN)
                             {
@@ -615,13 +660,13 @@ void Board::updateValidMoves(Player plr)
                                     // if pawn then push move only allowed if square empty
                                     validMoves[ind(cvr.origin)].push_back(Move(cvr.origin, {i,j}));
                                 }
-                                else if (owner == !plr && cvr.type == CAPTURE)
+                                else if (owner == !plrToMove && cvr.type == CAPTURE)
                                 {
                                     // capture move only allowed if square occupied
                                     validMoves[ind(cvr.origin)].push_back(Move(cvr.origin, {i,j}));
                                 }
                             }
-                            else
+                            else if (cvr.piece != KING)
                             {
                                 // for all non-pawn pieces, the capture and push are coincidental
                                 validMoves[ind(cvr.origin)].push_back(Move(cvr.origin, {i,j}));
@@ -631,6 +676,28 @@ void Board::updateValidMoves(Player plr)
                 }
             }
         }
+
+        // calculate legal moves for each king directly as it's more efficient doing it in reverse
+        for (auto& vec : moveVectors[KING])
+        {
+            if (validSqr(kingSqr[plrToMove] + vec))
+            {
+                bool isCvredByEnemy = false;
+                for (auto& cvr : sqrCoverage[ind(kingSqr[plrToMove] + vec)])
+                {
+                    if (cvr.owner == !plrToMove)
+                    {
+                        isCvredByEnemy = true;
+                    }
+                }
+                if ((isCvredByEnemy == false) && getSqrOwner(kingSqr[plrToMove] + vec) != plrToMove)
+                {
+                    validMoves[ind(kingSqr[plrToMove])].push_back(Move(kingSqr[plrToMove], kingSqr[plrToMove] + vec));
+                }
+            }
+        }
+
+        // calculate legal moves for pinned pieces, they can only move if they are moving to another square on the pin ray
     }
 }
 

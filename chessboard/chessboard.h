@@ -46,6 +46,8 @@ enum Status
     IN_PROGRESS, CHECKMATE, DRAW, STALEMATE
 };
 
+std::ostream& operator<<(std::ostream& os, Status sts);
+
 struct Move
 {
     GridVector start; 
@@ -113,7 +115,7 @@ private:
     std::unordered_map<Piece, bool> moveConstraint;
 
     // Flags
-    Player playerToMove;
+    Player plrToMove;
     Player winner;
     Status status;
     Player check;
@@ -142,6 +144,7 @@ public:
     Status getStatus();
     Player getWinner();
     std::vector<Move> getValidMoves(GridVector sqr);
+    int getNumValidMoves();
     
     MoveCallback requestMove(Move pieceMove);
     
@@ -161,9 +164,8 @@ private:
     std::vector<GridVector> castRay(GridVector origin, GridVector dir);
 
     void updateSqrCoverage();
-    void updateKingRays(Piece dirPiece, Player plr);
-    void updateValidMoves(Player plr);
-    
+    void updateKingRays(Piece dirPiece);
+    void updateValidMoves();
 
 };
 

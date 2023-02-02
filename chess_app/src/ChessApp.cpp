@@ -197,9 +197,9 @@ void BoardPanel::onMouseUp(wxMouseEvent& evt)
                         if (validMove == true)
                         {
                             // if valid move, then make request on comm for the main panel to communicate with board
+                            std::cout << "Move is valid, placing request through comm" << std::endl;
                             this->comm->requestMove(chessboard::Move(this->startSqr, this->endSqr));
                             this->activeSqr = false;
-                            std::cout << "Move is valid, placing request through comm" << std::endl;
                         }
                         else
                         {
@@ -237,8 +237,8 @@ void BoardPanel::onMouseUp(wxMouseEvent& evt)
                 if (validMove == true)
                 {
                     // if valid move, then make request on comm for the main panel to communicate with board
-                    this->comm->requestMove(chessboard::Move(this->startSqr, this->endSqr));
                     std::cout << "Move is valid, placing request through comm" << std::endl;
+                    this->comm->requestMove(chessboard::Move(this->startSqr, this->endSqr));
                 }
                 else
                 {
@@ -341,7 +341,7 @@ void BoardPanel::onPaint(wxPaintEvent& evt)
     }
 }
 
-// returns position within panel to grid vector for sqr
+// panel (row,col) index to grid vector for sqr on board (depends on playerView var of board)
 chessboard::GridVector BoardPanel::pos2gv(int x, int y)
 {
     int i = 8*y / this->size;
@@ -365,7 +365,7 @@ chessboard::GridVector BoardPanel::pos2gv(int x, int y)
     }
 }
 
-// index to grid vector for sqr
+// panel (row,col) index to grid vector for sqr on board (depends on playerView var of board)
 chessboard::GridVector BoardPanel::ind2gv(int i, int j)
 {
     if (i < 0 || i > 7 || j < 0 || j > 7)
@@ -386,6 +386,7 @@ chessboard::GridVector BoardPanel::ind2gv(int i, int j)
     }
 }
 
+// grid vector on board to panel row index (depends on playerView var of board)
 int BoardPanel::gv2i(chessboard::GridVector gv)
 {
     if (gv.rank < 0 || gv.rank > 7)
@@ -406,6 +407,7 @@ int BoardPanel::gv2i(chessboard::GridVector gv)
     }
 }
 
+// grid vector on board to panel col index (depends on playerView var of board)
 int BoardPanel::gv2j(chessboard::GridVector gv)
 {
     if (gv.file < 0 || gv.file > 7)
@@ -437,6 +439,8 @@ private:
     BoardPanel* boardPanel1;
     BoardPanel* boardPanel2;
 
+    Comm* comm;
+
     int boardPadding = 20;
 
 public:
@@ -461,19 +465,27 @@ MainPanel::MainPanel(wxWindow* parent) : wxPanel(parent, wxID_ANY, wxPoint(0, 0)
     this->board = new chessboard::Board;
 
     // setup comm for communication between board panels and main panel which makes moves on board system
-    Comm* comm = new Comm;
+    // requires lambda function
+    comm = new Comm;
     comm->requestMove = [&](chessboard::Move mv)
     { 
+        // request move in board system
         std::cout << "Move: " << mv << std::endl;
         chessboard::MoveCallback moveCallback = this->board->requestMove(mv);
         std::cout << "Move callback: " << moveCallback << std::endl;
         this->processMoveCallback(moveCallback);
+
+        // get game status following move
+        chessboard::Status status = this->board->getStatus();
+        std::cout << "Game status: " << status << std::endl;
+        std::cout << "======================================================" << std::endl;
     };
 
-    // initialise board panels
+    // initialise board panels with comm
     this->boardPanel1 = new BoardPanel(this, board, chessboard::WHITE, comm);
     this->boardPanel2 = new BoardPanel(this, board, chessboard::BLACK, comm);
 
+    // setup board
     this->board->setup();
 }
 
@@ -486,8 +498,13 @@ void MainPanel::processMoveCallback(chessboard::MoveCallback mcb)
 {
     if (mcb == chessboard::SUCCESS)
     {
+        // step both panels
         this->boardPanel1->step();
         this->boardPanel2->step();
+    }
+    else if (mcb == chessboard::FAILURE)
+    {
+        std::cout << "Move failed" << std::endl;
     }
 }
 
