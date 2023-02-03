@@ -45,7 +45,7 @@ public:
     ~BoardPanel();
 
     void step();
-    void setPanelDims(int x, int y, int width);
+    void setPanelSizing(int x, int y, int width);
 
     void onMouseDown(wxMouseEvent& evt); 
     void onMouseUp(wxMouseEvent& evt);
@@ -119,7 +119,7 @@ void BoardPanel::step()
     this->Update();
 }
 
-void BoardPanel::setPanelDims(int x, int y, int size)
+void BoardPanel::setPanelSizing(int x, int y, int size)
 {
     this->pos_x = x;
     this->pos_y = y;
@@ -144,7 +144,7 @@ void BoardPanel::onMouseUp(wxMouseEvent& evt)
     this->gvUp = this->pos2gv(this->mouseUp_x, this->mouseUp_y);
     this->mouseIsDown = false;
 
-    if (this->gvUp != chessboard::GridVector(999,999) && this->board->getPlayerToMove() == this->playerView)
+    if (this->gvUp != chessboard::GridVector(999,999) && this->board->getPlayerToMove() == this->playerView && this->board->getStatus() == chessboard::IN_PROGRESS)
     {
         if (this->gvUp == this->gvDown)
         {
@@ -207,10 +207,6 @@ void BoardPanel::onMouseUp(wxMouseEvent& evt)
                             std::cout << "Move not valid" << std::endl;
                         }                    
                     }
-                    //else
-                    //{
-                       // std::cout << "Square not owned by player with view" << std::endl;
-                    //}
                 }
             }
         }
@@ -429,6 +425,87 @@ int BoardPanel::gv2j(chessboard::GridVector gv)
 }
 
 /**************************************************************************************************************/
+// CONTROL PANEL
+
+class ControlPanel : public wxPanel
+{
+private:
+    wxStaticText* title;
+    wxStaticText** txtLabels;
+    int numTxtRows;
+    int numTxtCols;
+
+    int width;
+    int height;
+
+public:
+    ControlPanel(wxWindow* parent);
+    ~ControlPanel();
+
+    void setPanelSizing(int x, int y, int width, int height);
+    void setText(int r, int c, wxString t);
+    void clearText();
+};
+
+ControlPanel::ControlPanel(wxWindow* parent) : wxPanel(parent, wxID_ANY, wxPoint(0, 0))
+{
+    this->numTxtRows = 2;
+    this->numTxtCols = 2;
+    this->txtLabels = new wxStaticText*[this->numTxtRows * this->numTxtCols];
+
+    this->title = new wxStaticText(this, wxID_ANY, "Chess by W.Denny", wxDefaultPosition, wxSize(1,1), wxALIGN_CENTRE_HORIZONTAL);
+
+    for (int i = 0; i < this->numTxtCols * this->numTxtRows; ++i)
+    {
+        this->txtLabels[i] = new wxStaticText(this, wxID_ANY, "", wxDefaultPosition, wxSize(1,1));
+    }
+}
+
+ControlPanel::~ControlPanel()
+{
+
+}
+
+void ControlPanel::setPanelSizing(int x, int y, int width, int height)
+{
+    this->width = width;
+    this->height = height;
+
+    this->SetSize(x, y, this->width, this->height);
+    //this->SetBackgroundColour(wxColour(100,200,100));
+
+    wxFont titleFont(0.3 * (this->height/(this->numTxtRows + 1)), wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL, false);
+    this->title->SetSize(this->width*0.1, 0, this->width*0.8, this->height/(this->numTxtRows + 1));
+    this->title->SetFont(titleFont);
+
+    wxFont font(0.5 * (this->height/(this->numTxtRows + 1)), wxFONTFAMILY_DEFAULT, wxFONTSTYLE_NORMAL, wxFONTWEIGHT_NORMAL, false);
+
+    for (int i = 0; i < this->numTxtRows; ++i)
+    {
+        for (int j = 0; j < this->numTxtCols; ++j)
+        {
+            this->txtLabels[i*this->numTxtCols + j]->SetSize( this->width*0.5*j, (i + 1)*(this->height/(this->numTxtRows + 1)), this->width*0.5, this->height/(this->numTxtRows + 1));
+            this->txtLabels[i*this->numTxtCols + j]->SetFont(font);
+            //this->txtLabels[i*this->numTxtCols + j]->SetBackgroundColour(wxColour(200,100,200));
+        }
+    }
+}
+
+
+void ControlPanel::setText(int r, int c, wxString t)
+{
+    this->txtLabels[r*this->numTxtCols + c]->SetLabelText(t);
+}
+
+void ControlPanel::clearText()
+{
+    for (int i = 0; i < this->numTxtCols * this->numTxtRows; ++i)
+    {
+        this->txtLabels[i]->SetLabelText("");
+    }
+}
+
+/**************************************************************************************************************/
 // MAIN PANEL
 
 class MainPanel : public wxPanel
@@ -438,6 +515,8 @@ private:
 
     BoardPanel* boardPanel1;
     BoardPanel* boardPanel2;
+
+    ControlPanel* cpanel;
 
     Comm* comm;
 
@@ -449,7 +528,8 @@ public:
 
     void onResize(wxSizeEvent& evt);
 
-    void update(int vpSizeX, int vpSizeY);
+    void updateSizing(const int& vpSizeX, const int& vpSizeY);
+    void updateControlPanel();
     void processMoveCallback(chessboard::MoveCallback mcb);
 
     DECLARE_EVENT_TABLE()
@@ -479,14 +559,20 @@ MainPanel::MainPanel(wxWindow* parent) : wxPanel(parent, wxID_ANY, wxPoint(0, 0)
         chessboard::Status status = this->board->getStatus();
         std::cout << "Game status: " << status << std::endl;
         std::cout << "======================================================" << std::endl;
+
+        this->updateControlPanel();
     };
 
-    // initialise board panels with comm
+    // initialise board panels with comm attached to allow boards to communicate back to the main panel using requestMove function
     this->boardPanel1 = new BoardPanel(this, board, chessboard::WHITE, comm);
     this->boardPanel2 = new BoardPanel(this, board, chessboard::BLACK, comm);
+    this->cpanel = new ControlPanel(this);
 
     // setup board
     this->board->setup();
+
+    // update control panel text for first move
+    this->updateControlPanel();
 }
 
 MainPanel::~MainPanel()
@@ -511,11 +597,11 @@ void MainPanel::processMoveCallback(chessboard::MoveCallback mcb)
 // event handler for resizing of main frame
 void MainPanel::onResize(wxSizeEvent& evt)
 {
-    this->update(evt.GetSize().GetX(), evt.GetSize().GetY());
+    this->updateSizing(evt.GetSize().GetX(), evt.GetSize().GetY());
 }
 
 // refreshes the main panel and its children after an event
-void MainPanel::update(int vpSizeX, int vpSizeY)
+void MainPanel::updateSizing(const int& vpSizeX, const int& vpSizeY)
 {
     // refresh size and position of board panels
     int boardBoxWidth = (vpSizeX / 2) - 2*boardPadding;
@@ -540,9 +626,44 @@ void MainPanel::update(int vpSizeX, int vpSizeY)
         y = boardPadding + surplus / 2;
     }
 
-    this->boardPanel1->setPanelDims(x, y, boardSize);
-    this->boardPanel2->setPanelDims(x + vpSizeX / 2, y, boardSize);
+    this->boardPanel1->setPanelSizing(x, y, boardSize);
+    this->boardPanel2->setPanelSizing(x + vpSizeX / 2, y, boardSize);
+
+    this->cpanel->setPanelSizing(vpSizeX*0.1, vpSizeY*0.6, vpSizeX*0.8, vpSizeY*0.2);
 }
+
+void MainPanel::updateControlPanel()
+{
+    // update panel text
+    this->cpanel->clearText();
+    if (this->board->getStatus() == chessboard::IN_PROGRESS)
+    {
+        if (this->board->getPlayerToMove() == chessboard::WHITE)
+            this->cpanel->setText(0, 0, "White's turn");
+        else
+            this->cpanel->setText(0, 0, "Black's turn");
+
+        if (this->board->getCheck() != chessboard::PLAYER_NULL)
+            this->cpanel->setText(0, 1, "CHECK");
+        else
+            this->cpanel->setText(0, 1, "");
+    }
+    else if (this->board->getStatus() == chessboard::CHECKMATE)
+    {
+        this->cpanel->setText(0, 0, "Game over");
+        this->cpanel->setText(0, 1, "CHECKMATE");
+        if (this->board->getWinner() == chessboard::WHITE)
+            this->cpanel->setText(1, 0, "White wins");
+        else if (this->board->getWinner() == chessboard::BLACK)
+            this->cpanel->setText(1, 0, "Black wins");
+    }
+    else if (this->board->getStatus() == chessboard::STALEMATE)
+    {
+        this->cpanel->setText(0, 0, "Game over");
+        this->cpanel->setText(0, 1, "STALEMATE");
+    }
+}
+
 
 /**************************************************************************************************************/
 // MAIN FRAME

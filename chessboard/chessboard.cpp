@@ -293,6 +293,7 @@ void Board::executeCastleKS()
     clearSqr({7,rank});
     setSqr({6,rank}, KING, plrToMove);
     setSqr({5,rank}, ROOK, plrToMove);
+    kingSqr[plrToMove] = GridVector({6,rank}); // update kjng pos
 }
 
 // [PRIVATE] 
@@ -303,6 +304,7 @@ void Board::executeCastleQS()
     clearSqr({0,rank});
     setSqr({2,rank}, KING, plrToMove);
     setSqr({3,rank}, ROOK, plrToMove);
+    kingSqr[plrToMove] = GridVector({2,rank}); // update king pos
 }
 
 // [PUBLIC] returns which player in check, if any
