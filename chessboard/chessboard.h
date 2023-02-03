@@ -120,6 +120,10 @@ private:
 
     std::vector<std::vector<Move>> validMoves;
 
+    std::vector<Move> enpssntMoves;
+
+    std::vector<Move> validSpecialMoves;
+
     std::unordered_map<Player, std::vector<GridVector>> doublePushedPawn;
 
 public:
@@ -138,7 +142,7 @@ public:
     std::vector<Move> getValidMoves(GridVector sqr);
     int getNumValidMoves();
     
-    MoveCallback requestMove(Move pieceMove);
+    MoveCallback requestMove(Move mv);
     
 private:
     void step();
@@ -146,9 +150,11 @@ private:
     int ind(GridVector sqr);
     void setSqr(GridVector sqr, Piece type, Player owner);
     void clearSqr(GridVector sqr);
-    void executeMove(Move pieceMove);
+    void executeMove(Move mv);
+    void executeEnPssnt(Move mv);
 
     bool isCoveredByPlr(GridVector sqr, Player plr);
+    bool isCaptureCoveredByPlr(GridVector sqr, Player plr, bool allowRayBndKing);
     bool isCoveredBySqr(GridVector on, GridVector by);
     bool isPinned(GridVector sqr);
     std::vector<SqrCover> getCoversByPlr(GridVector sqr, Player plr);
@@ -158,6 +164,8 @@ private:
     void updateSqrCoverage();
     void updateKingRays(Piece dirPiece);
     void updateValidMoves();
+    void updateValidSpecialMoves();
+    void updateEnPssnt(Move mv);
 
 };
 

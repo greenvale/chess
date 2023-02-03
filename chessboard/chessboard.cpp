@@ -10,6 +10,10 @@ GridVector operator+(GridVector lh, GridVector rh)
 {
     return GridVector(lh.file + rh.file, lh.rank + rh.rank);
 }
+GridVector operator-(GridVector lh, GridVector rh)
+{
+    return GridVector(lh.file - rh.file, lh.rank - rh.rank);
+}
 GridVector operator*(GridVector lh, double rh)
 {
     return GridVector(lh.file * rh, lh.rank * rh);
@@ -105,6 +109,10 @@ std::ostream& operator<<(std::ostream& os, Move mv)
 bool operator==(Move lh, Move rh)
 {
     return ((lh.start.file == rh.start.file) && (lh.start.rank == rh.start.rank) && (lh.end.file == rh.end.file) && (lh.end.rank == rh.end.rank));
+}
+bool operator!=(Move lh, Move rh)
+{
+    return !(lh == rh);
 }
 
 /**************************************************************************************/
@@ -249,18 +257,27 @@ void Board::clearSqr(GridVector sqr)
 }
 
 // [PRIVATE]
-void Board::executeMove(Move pieceMove)
+void Board::executeMove(Move mv)
 {
-    Piece piece = sqrPieces[ind(pieceMove.start)];
-    Player owner = sqrOwners[ind(pieceMove.start)];
-    clearSqr(pieceMove.start);
-    sqrPieces[ind(pieceMove.end)] = piece;
-    sqrOwners[ind(pieceMove.end)] = owner;
+    Piece piece = sqrPieces[ind(mv.start)];
+    Player owner = sqrOwners[ind(mv.start)];
+    clearSqr(mv.start);
+    setSqr(mv.end, piece, owner);
 
     // keep track of the king positions
-    if (pieceMove.start == kingSqr[plrToMove])
+    if (mv.start == kingSqr[plrToMove])
     {
-        kingSqr[plrToMove] = pieceMove.end;
+        kingSqr[plrToMove] = mv.end;
+    }
+}
+
+// [PRIVATE] executes en passant move
+void Board::executeEnPssnt(Move mv)
+{
+    if ((mv.end - mv.start).rank == 1) // white taking black pawn
+    {
+        clearSqr(mv.end - GridVector(0, 1));
+        executeMove(mv);
     }
 }
 
@@ -288,37 +305,59 @@ Player Board::getWinner()
     return winner;
 }
 
-// [PUBLIC]
+// [PUBLIC]m
 std::vector<Move> Board::getValidMoves(GridVector sqr)
 {
     return validMoves[ind(sqr)];
 }
 
 // [PUBLIC] primary function for moving pieces from an outside program
-MoveCallback Board::requestMove(Move pieceMove)
+MoveCallback Board::requestMove(Move mv)
 {
     MoveCallback cb = FAILURE;
 
-    // first check if this is a special move and thus requires special handling
-    //for (auto& mv : validSpecialMoves)
-    //{
-
-    //}
-
-    // if not a special move then treat as a normal move and search through valid moves
-    for (auto& mv : validMoves[ind(pieceMove.start)])
+    if (status == IN_PROGRESS)
     {
-        if (mv == pieceMove)
+        bool skip = false;
+
+        // check if en passant move
+        if (skip == false)
         {
-            cb = SUCCESS;
+            for (auto& epMv : enpssntMoves)
+            {
+                if (mv == epMv && getSqrOwner(epMv.start) == plrToMove) // check that this move can be made by player to move
+                {
+                    executeEnPssnt(mv);
+                    skip = true;
+                    cb = SUCCESS;
+                }
+            }
         }
-    }
-    
-    if (cb == SUCCESS)
-    {
-        executeMove(pieceMove);
-        plrToMove = !plrToMove;
-        step();
+
+        // if not a special move then treat as a normal move and search through valid moves
+        if (skip == false)
+        {
+            for (auto& validMv : validMoves[ind(mv.start)])
+            {
+                if (mv == validMv)
+                {
+                    cb = SUCCESS;
+                }
+            }
+        }
+
+        if (cb == SUCCESS)
+        {
+            updateEnPssnt(mv);
+
+            if (skip == false)
+            {
+                executeMove(mv);
+            }
+            
+            plrToMove = !plrToMove;
+            step();
+        }
     }
     return cb;
 }
@@ -350,6 +389,17 @@ bool Board::isCoveredByPlr(GridVector sqr, Player plr)
     for (auto& cvr : sqrCoverage[ind(sqr)])
     {
         if (cvr.owner == plr)
+            return true;
+    }
+    return false;
+}
+
+// [PRIVATE] returns true if a square is covered by a player
+bool Board::isCaptureCoveredByPlr(GridVector sqr, Player plr, bool allowRayBndKing)
+{
+    for (auto& cvr : sqrCoverage[ind(sqr)])
+    {
+        if (cvr.owner == plr && (cvr.type == CAPTURE || cvr.type == PUSH_CAPTURE || (allowRayBndKing == true && cvr.type == RAY_BEYOND_KING)))
             return true;
     }
     return false;
@@ -430,6 +480,7 @@ void Board::step()
     updateKingRays(BISHOP); // diagonal rays
 
     updateValidMoves(); // update valid moves for player to move
+    //updateValidSpecialMoves();
 
     // if no valid moves then game is over
     if (getNumValidMoves() == 0)
@@ -611,7 +662,7 @@ void Board::updateValidMoves()
         // method 1 : move the king to a square that is not defended by enemy (including taking piece checking (if next to) or other enemy piece that isn't defended)
         for (auto& vec : moveVectors[KING])
         {
-            if (validSqr(kingSqr[plrToMove] + vec) && getSqrOwner(kingSqr[plrToMove] + vec) != plrToMove && (isCoveredByPlr(kingSqr[plrToMove] + vec, !plrToMove) == false))
+            if (validSqr(kingSqr[plrToMove] + vec) && getSqrOwner(kingSqr[plrToMove] + vec) != plrToMove && (isCaptureCoveredByPlr(kingSqr[plrToMove] + vec, !plrToMove, true) == false))
             {
                 validMoves[ind(kingSqr[plrToMove])].push_back(Move(kingSqr[plrToMove], kingSqr[plrToMove] + vec));
             }
@@ -652,7 +703,7 @@ void Board::updateValidMoves()
     }   
     else
     {
-        // NOT IN CHECK, therefore iterate through all squares and record moves that cover this square
+        // NOT IN CHECK, therefore iterate through all squares and record moves that cover this square by the player to move
         // only calculate legal moves for non-king pieces that are NOT PINNED
         for (int i = 0; i < 8; ++i)
         {
@@ -661,7 +712,7 @@ void Board::updateValidMoves()
                 Piece piece = getSqrPiece({i,j});
                 Player owner = getSqrOwner({i,j});
 
-                if (owner != plrToMove) // make sure this square is not owned by plr to move
+                if (owner != plrToMove) // make sure this square is not owned by plr to move (player to move cannot move piece to square it already occupies)
                 {
                     for (auto& cvr : sqrCoverage[ind({i,j})])
                     {
@@ -696,22 +747,22 @@ void Board::updateValidMoves()
         {
             if (validSqr(kingSqr[plrToMove] + vec))
             {
-                bool isCvredByEnemy = false;
-                for (auto& cvr : sqrCoverage[ind(kingSqr[plrToMove] + vec)])
-                {
-                    if (cvr.owner == !plrToMove)
-                    {
-                        isCvredByEnemy = true;
-                    }
-                }
-                if ((isCvredByEnemy == false) && getSqrOwner(kingSqr[plrToMove] + vec) != plrToMove)
+                //bool isCvredByEnemy = false;
+                //for (auto& cvr : sqrCoverage[ind(kingSqr[plrToMove] + vec)])
+                //{
+                 //   if (cvr.owner == !plrToMove && (cv.))
+                 //   {
+                //        isCvredByEnemy = true;
+                //    }
+                //}
+                if ((isCaptureCoveredByPlr(kingSqr[plrToMove] + vec, !plrToMove, false) == false) && getSqrOwner(kingSqr[plrToMove] + vec) != plrToMove)
                 {
                     validMoves[ind(kingSqr[plrToMove])].push_back(Move(kingSqr[plrToMove], kingSqr[plrToMove] + vec));
                 }
             }
         }
 
-        // calculate legal moves for pinned pieces, they can only move if they are moving to another square on the pin ray
+        // calculate legal moves for pinned pieces, they can only move if they are moving to another square on the pin ray (including taking the pinning piece)
         for (auto& pin : pinRays)
         {
             // iterate through each square in ray
@@ -742,6 +793,51 @@ void Board::updateValidMoves()
                         }
                     }
                 }
+            }
+        }
+
+        // include en passant moves that are already calculated for the player to move
+        for (auto& mv : enpssntMoves)
+        {
+            validMoves[ind(mv.start)].push_back(mv);
+        }
+    }
+}
+
+// checks for castling, en passant
+void Board::updateValidSpecialMoves()
+{
+
+}
+
+// called just after move approved for execution but before it is executed and the plrToMove is changed
+void Board::updateEnPssnt(Move mv)
+{
+    enpssntMoves.clear(); // note en passant must be exercised immediately, clear all previous moves
+
+    // check if there are new enpassant moves available with latest move
+    if (getSqrPiece(mv.start) == PAWN)
+    {
+        if (plrToMove == WHITE && mv.start.rank == 1 && (mv.end - mv.start) == GridVector(0,2)) // if white double pawn pushes
+        {
+            if (validSqr(mv.start + GridVector(1,2)) && getSqrPiece(mv.start + GridVector(1,2)) == PAWN && getSqrOwner(mv.start + GridVector(1,2)) == !plrToMove)
+            {
+                enpssntMoves.push_back(Move(mv.start + GridVector(1,2), mv.start + GridVector(0,1)));
+            }
+            else if (validSqr(mv.start + GridVector(-1,2)) && getSqrPiece(mv.start + GridVector(-1,2)) == PAWN && getSqrOwner(mv.start + GridVector(-1,2)) == !plrToMove)
+            {
+                enpssntMoves.push_back(Move(mv.start + GridVector(-1,2), mv.start + GridVector(0,1)));
+            }
+        }
+        else if (plrToMove == BLACK && mv.start.rank == 6 && (mv.end - mv.start) == GridVector(0,-2))
+        {
+            if (validSqr(mv.start + GridVector(1,-2)) && getSqrPiece(mv.start + GridVector(1,-2)) == PAWN && getSqrOwner(mv.start + GridVector(1,-2)) == !plrToMove)
+            {
+                enpssntMoves.push_back(Move(mv.start + GridVector(1,-2), mv.start + GridVector(0,-1)));
+            }
+            else if (validSqr(mv.start + GridVector(-1,-2)) && getSqrPiece(mv.start + GridVector(-1,-2)) == PAWN && getSqrOwner(mv.start + GridVector(-1,-2)) == !plrToMove)
+            {
+                enpssntMoves.push_back(Move(mv.start + GridVector(-1,-2), mv.start + GridVector(0,-1)));
             }
         }
     }
