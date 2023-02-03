@@ -111,20 +111,23 @@ private:
     Status status;
     Player check;
     std::unordered_map<Player, bool> kingMoved;
-
-    std::vector<std::vector<SqrCover>> sqrCoverage;
+    std::unordered_map<Player, bool> rookKSMoved;
+    std::unordered_map<Player, bool> rookQSMoved;
     std::unordered_map<Player, GridVector> kingSqr;
 
+    // general square coverage (doesn't equate to legal moves!)
+    std::vector<std::vector<SqrCover>> sqrCoverage;
+    
+    // rays
     std::vector<Ray> pinRays;
     std::vector<Ray> checkRays;
 
-    std::vector<std::vector<Move>> validMoves;
+    std::vector<std::vector<Move>> validMoves; // stores all valid moves including special moves
 
+    // special moves
     std::vector<Move> enpssntMoves;
-
-    std::vector<Move> validSpecialMoves;
-
-    std::unordered_map<Player, std::vector<GridVector>> doublePushedPawn;
+    bool castleKSValid;
+    bool castleQSValid;
 
 public:
     Board();
@@ -145,13 +148,15 @@ public:
     MoveCallback requestMove(Move mv);
     
 private:
-    void step();
+    void evaluateBoard();
 
     int ind(GridVector sqr);
     void setSqr(GridVector sqr, Piece type, Player owner);
     void clearSqr(GridVector sqr);
     void executeMove(Move mv);
     void executeEnPssnt(Move mv);
+    void executeCastleKS();
+    void executeCastleQS();
 
     bool isCoveredByPlr(GridVector sqr, Player plr);
     bool isCaptureCoveredByPlr(GridVector sqr, Player plr, bool allowRayBndKing);
@@ -164,8 +169,8 @@ private:
     void updateSqrCoverage();
     void updateKingRays(Piece dirPiece);
     void updateValidMoves();
-    void updateValidSpecialMoves();
     void updateEnPssnt(Move mv);
+    void updateCastle();
 
 };
 

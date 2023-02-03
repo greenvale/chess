@@ -203,13 +203,17 @@ void Board::setup()
     kingSqr[BLACK] = GridVector({4,7});
     kingMoved[WHITE] = false;
     kingMoved[BLACK] = false;
+    rookKSMoved[WHITE] = false;
+    rookKSMoved[BLACK] = false;
+    rookQSMoved[WHITE] = false;
+    rookQSMoved[BLACK] = false;
 
     plrToMove = WHITE;
     status = IN_PROGRESS;
     check = PLAYER_NULL;
     winner = PLAYER_NULL;
 
-    step(); // initially step system
+    evaluateBoard(); // initially step system
 }
 
 // [PRIVATE]
@@ -281,6 +285,26 @@ void Board::executeEnPssnt(Move mv)
     }
 }
 
+// [PRIVATE]
+void Board::executeCastleKS()
+{
+    int rank = (plrToMove == WHITE) ? 0 : 7;
+    clearSqr({4,rank});
+    clearSqr({7,rank});
+    setSqr({6,rank}, KING, plrToMove);
+    setSqr({5,rank}, ROOK, plrToMove);
+}
+
+// [PRIVATE] 
+void Board::executeCastleQS()
+{
+    int rank = (plrToMove == WHITE) ? 0 : 7;
+    clearSqr({4,rank});
+    clearSqr({0,rank});
+    setSqr({2,rank}, KING, plrToMove);
+    setSqr({3,rank}, ROOK, plrToMove);
+}
+
 // [PUBLIC] returns which player in check, if any
 Player Board::getCheck() 
 {
@@ -334,7 +358,24 @@ MoveCallback Board::requestMove(Move mv)
             }
         }
 
-        // if not a special move then treat as a normal move and search through valid moves
+        // check if castling move
+        if (skip == false)
+        {
+            if (kingSqr[plrToMove] == mv.start && castleKSValid == true && (mv.end - mv.start).file == 2)
+            {
+                executeCastleKS();
+                skip = true;
+                cb = SUCCESS;
+            }
+            else if (kingSqr[plrToMove] == mv.start && castleQSValid == true && (mv.end - mv.start).file == -2)
+            {
+                executeCastleQS();
+                skip = true;
+                cb = SUCCESS;
+            }
+        }
+
+        // if not a special move (en passant/castle) then treat as a normal move and search through valid moves
         if (skip == false)
         {
             for (auto& validMv : validMoves[ind(mv.start)])
@@ -348,15 +389,34 @@ MoveCallback Board::requestMove(Move mv)
 
         if (cb == SUCCESS)
         {
-            updateEnPssnt(mv);
+            updateEnPssnt(mv); // update en passant before executing move
+            
+            // keep track of king being moved for first time for castling
+            if (mv.start == kingSqr[plrToMove]) // if plr moves king then keep track of this
+            {
+                kingMoved[plrToMove] = true;
+            }
 
-            if (skip == false)
+            // keep track of rook being moved for first time for castling
+            int rank = (plrToMove == WHITE) ? 0 : 7;
+            if (mv.start == GridVector(7,rank) && rookKSMoved[plrToMove] == false)
+            {
+                rookKSMoved[plrToMove] = true;
+            }
+            else if (mv.start == GridVector(0,rank) && rookQSMoved[plrToMove] == false)
+            {
+                rookQSMoved[plrToMove] = true;
+            }
+
+            // execute move
+            if (skip == false) // if move already executed in a special way then skip = true
             {
                 executeMove(mv);
             }
             
+            // switch player to move and reevaluate board
             plrToMove = !plrToMove;
-            step();
+            evaluateBoard(); // evaluates board (en passant moves already calculated)
         }
     }
     return cb;
@@ -451,7 +511,7 @@ int Board::getNumValidMoves()
 }
 
 // [PRIVATE] steps the system by clearing all previous data and recalculating position to get coverage of pieces, king threats, etc.
-void Board::step()
+void Board::evaluateBoard()
 {
     // clear data
     for (int i = 0; i < 8; ++i)
@@ -478,9 +538,10 @@ void Board::step()
     // update king rays for player to move (pinned rays, check rays)
     updateKingRays(ROOK); // file/rank rays
     updateKingRays(BISHOP); // diagonal rays
+    
+    updateCastle(); // update castle moves before updating valid moves (as this will be included)
 
     updateValidMoves(); // update valid moves for player to move
-    //updateValidSpecialMoves();
 
     // if no valid moves then game is over
     if (getNumValidMoves() == 0)
@@ -695,10 +756,6 @@ void Board::updateValidMoves()
                     }
                 }
             }
-            else
-            {
-                std::cout << "Rays size: " << checkRays.size() << std::endl;
-            }
         }
     }   
     else
@@ -742,19 +799,11 @@ void Board::updateValidMoves()
             }
         }
 
-        // calculate legal moves for each king directly as it's more efficient doing it in reverse
+        // calculate legal moves for player to move's king directly as it's more efficient than looking at cvrs by the king
         for (auto& vec : moveVectors[KING])
         {
             if (validSqr(kingSqr[plrToMove] + vec))
             {
-                //bool isCvredByEnemy = false;
-                //for (auto& cvr : sqrCoverage[ind(kingSqr[plrToMove] + vec)])
-                //{
-                 //   if (cvr.owner == !plrToMove && (cv.))
-                 //   {
-                //        isCvredByEnemy = true;
-                //    }
-                //}
                 if ((isCaptureCoveredByPlr(kingSqr[plrToMove] + vec, !plrToMove, false) == false) && getSqrOwner(kingSqr[plrToMove] + vec) != plrToMove)
                 {
                     validMoves[ind(kingSqr[plrToMove])].push_back(Move(kingSqr[plrToMove], kingSqr[plrToMove] + vec));
@@ -763,6 +812,7 @@ void Board::updateValidMoves()
         }
 
         // calculate legal moves for pinned pieces, they can only move if they are moving to another square on the pin ray (including taking the pinning piece)
+        // note this code could be made more efficient by looking at piece types and going case by case
         for (auto& pin : pinRays)
         {
             // iterate through each square in ray
@@ -801,13 +851,17 @@ void Board::updateValidMoves()
         {
             validMoves[ind(mv.start)].push_back(mv);
         }
+
+        // include castling moves using the flags that have already been calculated
+        if (castleKSValid == true)
+        {
+            validMoves[ind(kingSqr[plrToMove])].push_back(Move(kingSqr[plrToMove], kingSqr[plrToMove] + GridVector(2,0)));
+        }
+        if (castleQSValid == true)
+        {
+            validMoves[ind(kingSqr[plrToMove])].push_back(Move(kingSqr[plrToMove], kingSqr[plrToMove] + GridVector(-2,0)));
+        }
     }
-}
-
-// checks for castling, en passant
-void Board::updateValidSpecialMoves()
-{
-
 }
 
 // called just after move approved for execution but before it is executed and the plrToMove is changed
@@ -818,7 +872,7 @@ void Board::updateEnPssnt(Move mv)
     // check if there are new enpassant moves available with latest move
     if (getSqrPiece(mv.start) == PAWN)
     {
-        if (plrToMove == WHITE && mv.start.rank == 1 && (mv.end - mv.start) == GridVector(0,2)) // if white double pawn pushes
+        if (plrToMove == WHITE && mv.start.rank == 1 && (mv.end - mv.start) == GridVector(0,2)) // if white double pawn push
         {
             if (validSqr(mv.start + GridVector(1,2)) && getSqrPiece(mv.start + GridVector(1,2)) == PAWN && getSqrOwner(mv.start + GridVector(1,2)) == !plrToMove)
             {
@@ -829,7 +883,7 @@ void Board::updateEnPssnt(Move mv)
                 enpssntMoves.push_back(Move(mv.start + GridVector(-1,2), mv.start + GridVector(0,1)));
             }
         }
-        else if (plrToMove == BLACK && mv.start.rank == 6 && (mv.end - mv.start) == GridVector(0,-2))
+        else if (plrToMove == BLACK && mv.start.rank == 6 && (mv.end - mv.start) == GridVector(0,-2)) // if black double pawn push
         {
             if (validSqr(mv.start + GridVector(1,-2)) && getSqrPiece(mv.start + GridVector(1,-2)) == PAWN && getSqrOwner(mv.start + GridVector(1,-2)) == !plrToMove)
             {
@@ -839,6 +893,31 @@ void Board::updateEnPssnt(Move mv)
             {
                 enpssntMoves.push_back(Move(mv.start + GridVector(-1,-2), mv.start + GridVector(0,-1)));
             }
+        }
+    }
+}
+
+void Board::updateCastle()
+{
+    // reset flags to false
+    castleKSValid = false;
+    castleQSValid = false;
+
+    int rank = (plrToMove == WHITE) ? 0 : 7;
+
+    if (kingMoved[plrToMove] == false)
+    {
+        // king side castling
+        if (rookKSMoved[plrToMove] == false && getSqrPiece({5,rank}) == PIECE_NULL && getSqrPiece({6,rank}) == PIECE_NULL 
+            && isCoveredByPlr({5,rank}, !plrToMove) == false && isCoveredByPlr({6,rank}, !plrToMove) == false)
+        {
+            castleKSValid = true;
+        }
+        // queen side castling
+        if (rookKSMoved[plrToMove] == false && getSqrPiece({1,rank}) == PIECE_NULL && getSqrPiece({2,rank}) == PIECE_NULL && getSqrPiece({3,rank}) == PIECE_NULL
+            && isCoveredByPlr({1,rank}, !plrToMove) == false && isCoveredByPlr({2,rank}, !plrToMove) == false && isCoveredByPlr({3,rank}, !plrToMove) == false)
+        {
+            castleQSValid = true;
         }
     }
 }
