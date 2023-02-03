@@ -695,6 +695,11 @@ void MainPanel::updateControlPanel()
         this->cpanel->setText(0, 0, "Game over");
         this->cpanel->setText(0, 1, "STALEMATE");
     }
+    else if (this->board->getStatus() == chessboard::DRAW)
+    {
+        this->cpanel->setText(0, 0, "Game over");
+        this->cpanel->setText(0, 1, "DRAW");
+    }
 }
 
 
