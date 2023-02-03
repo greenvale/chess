@@ -6,7 +6,7 @@
 
 struct Comm
 {
-    std::function<void(chessboard::Move)> requestMove;
+    std::function<void(chessboard::Move, int)> requestMove;
 };
 
 /**************************************************************************************************************/
@@ -94,7 +94,7 @@ BoardPanel::BoardPanel(wxWindow* parent, chessboard::Board* board, chessboard::P
             std::cout << "White " << img.first << " not loaded" << std::endl;
         }   
     }
-    for (auto& img : this->whitePieceImgs)
+    for (auto& img : this->blackPieceImgs)
     {
         if (img.second.IsOk())
         {
@@ -198,7 +198,16 @@ void BoardPanel::onMouseUp(wxMouseEvent& evt)
                         {
                             // if valid move, then make request on comm for the main panel to communicate with board
                             std::cout << "Move is valid, placing request through comm" << std::endl;
-                            this->comm->requestMove(chessboard::Move(this->startSqr, this->endSqr));
+
+                            // check if this move is a pawn promotion
+                            int rankPromote = (this->board->getPlayerToMove() == chessboard::WHITE) ? 7 : 0;
+                            bool pawnPromote = false;
+                            if (this->board->getSqrPiece(this->startSqr) == chessboard::PAWN && this->endSqr.rank == rankPromote)
+                            {
+                                pawnPromote = true;
+                            }
+                                
+                            this->comm->requestMove(chessboard::Move(this->startSqr, this->endSqr), pawnPromote);
                             this->activeSqr = false;
                         }
                         else
@@ -234,7 +243,14 @@ void BoardPanel::onMouseUp(wxMouseEvent& evt)
                 {
                     // if valid move, then make request on comm for the main panel to communicate with board
                     std::cout << "Move is valid, placing request through comm" << std::endl;
-                    this->comm->requestMove(chessboard::Move(this->startSqr, this->endSqr));
+
+                    // check if this move is a pawn promotion
+                    int rankPromote = (this->board->getPlayerToMove()) ? 7 : 0;
+                    bool pawnPromote = false;
+                    if (this->board->getSqrPiece(this->startSqr) == chessboard::PAWN && this->endSqr.rank == rankPromote)
+                        pawnPromote = true;
+
+                    this->comm->requestMove(chessboard::Move(this->startSqr, this->endSqr), pawnPromote);
                 }
                 else
                 {
@@ -547,11 +563,28 @@ MainPanel::MainPanel(wxWindow* parent) : wxPanel(parent, wxID_ANY, wxPoint(0, 0)
     // setup comm for communication between board panels and main panel which makes moves on board system
     // requires lambda function
     comm = new Comm;
-    comm->requestMove = [&](chessboard::Move mv)
+    comm->requestMove = [&](chessboard::Move mv, int pawnPromote)
     { 
+        chessboard::Piece pieceFlag = chessboard::PIECE_NULL;
+        if (pawnPromote == true)
+        {
+            // launch dialog to choose new piece in place of pawn promotion
+            wxString promoteOptions[] = {"Queen", "Bishop", "Knight", "Pawn"};
+            int ind = wxGetSingleChoiceIndex("Choose piece to replace pawn", "Pawn promotion", wxArrayString(4, promoteOptions));
+            
+            switch(ind)
+            {
+                case 0 : pieceFlag = chessboard::QUEEN; break;
+                case 1 : pieceFlag = chessboard::BISHOP; break;
+                case 2 : pieceFlag = chessboard::KNIGHT; break;
+                case 3 : pieceFlag = chessboard::PAWN; break;
+                default: pieceFlag = chessboard::QUEEN;
+            }
+        }
+
         // request move in board system
         std::cout << "Move: " << mv << std::endl;
-        chessboard::MoveCallback moveCallback = this->board->requestMove(mv);
+        chessboard::MoveCallback moveCallback = this->board->requestMove(mv, pieceFlag);
         std::cout << "Move callback: " << moveCallback << std::endl;
         this->processMoveCallback(moveCallback);
 

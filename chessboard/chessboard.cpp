@@ -338,7 +338,7 @@ std::vector<Move> Board::getValidMoves(GridVector sqr)
 }
 
 // [PUBLIC] primary function for moving pieces from an outside program
-MoveCallback Board::requestMove(Move mv)
+MoveCallback Board::requestMove(Move mv, Piece pieceFlag)
 {
     MoveCallback cb = FAILURE;
 
@@ -389,7 +389,7 @@ MoveCallback Board::requestMove(Move mv)
             }
         }
 
-        if (cb == SUCCESS)
+        if (cb == SUCCESS) // move has been validated
         {
             updateEnPssnt(mv); // update en passant before executing move
             
@@ -414,6 +414,12 @@ MoveCallback Board::requestMove(Move mv)
             if (skip == false) // if move already executed in a special way then skip = true
             {
                 executeMove(mv);
+            }
+
+            // check if this move is a pawn promotion and thus requires pieceFlag
+            if (getSqrPiece(mv.end) == PAWN && mv.end.rank == (7 - rank))
+            {
+                setSqr(mv.end, pieceFlag, plrToMove);
             }
             
             // switch player to move and reevaluate board

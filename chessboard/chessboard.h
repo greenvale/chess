@@ -145,7 +145,7 @@ public:
     std::vector<Move> getValidMoves(GridVector sqr);
     int getNumValidMoves();
     
-    MoveCallback requestMove(Move mv);
+    MoveCallback requestMove(Move mv, Piece pieceFlag = PIECE_NULL); // note pieceFlag only required for pawn promotion
     
 private:
     void evaluateBoard();
