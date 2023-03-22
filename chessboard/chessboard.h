@@ -9,6 +9,9 @@
 #include <cstring>
 #include <algorithm>
 
+namespace gv
+{
+
 namespace chessboard
 {
 
@@ -174,4 +177,6 @@ private:
 
 };
 
-}
+} // namespace chessboard
+
+} // namespace gv

@@ -1,5 +1,7 @@
 #include "chessboard.h"
 
+namespace gv
+{
 namespace chessboard
 {
 
@@ -930,4 +932,6 @@ void Board::updateCastle()
     }
 }
 
-}
+} // namespace chessboard
+
+} // namespace gv
