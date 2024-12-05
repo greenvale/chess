@@ -1,3 +1,6 @@
+from typing import Dict, Union, List, Tuple
+
+board_dtype = Dict[Tuple[int,int], Union[str,None]]
 
 def create_board():
     return {(i,j):None for j in range(8) for i in range(8)}
@@ -33,7 +36,8 @@ def S2I(arr):
     return [s2i(idx) for idx in arr]
 
 
-def raycast(brd, start, deltas):
+def raycast(brd : board_dtype, start : Tuple[int,int], deltas : List[Tuple[int,int]]) -> List[Tuple[int,int]]:
+
     i0, j0 = start
     assert(0<=i0<8 and 0<=j0<8)
     squares = []
@@ -52,35 +56,28 @@ def raycast(brd, start, deltas):
     return squares
 
 
-
-
-def show_squares(sqrs):
-    for i in range(8):
-        print("  ".join(["#" if (i,j) in sqrs else "." for j in range(8)]))
-
-
-def print_board(brd):
+def print_board(brd : board_dtype):
     for i in range(8):
         print(" ".join([brd[i,j] if brd[i,j] else ("::" if (i+j)%2==0 else "  ") for j in range(8)]))
 
 
-def get_pawn_pushes(brd):
+def get_pawn_pushes(brd : board_dtype):
     pawn_pushes = {(i,j): {"w":[], "b":[]} for j in range(8) for i in range(8)}
     for i in range(8):
         for j in range(8):
             if brd[i,j] is not None and brd[i,j][0] == "p":
                 if brd[i,j][1] == "w" and j+1 < 8:
                     pawn_pushes[i,j+1]["w"].append((i,j))
-                    if j == 1:
+                    if j == 1 and brd[i,j+1] == None: # Make sure that the intermediate square is empty for double push
                         pawn_pushes[i,j+2]["w"].append((i,j))
                 if brd[i,j][1] == "b" and 0<=j-1:
                     pawn_pushes[i,j-1]["b"].append((i,j))
-                    if j == 6:
+                    if j == 6 and brd[i,j-1] == None: # Make sure that the intermediate square is empty for double push
                         pawn_pushes[i,j-2]["b"].append((i,j))
     return pawn_pushes
 
 
-def get_covers(brd):
+def get_covers(brd : board_dtype):
     covers = {(i,j): {"w":[], "b":[]} for j in range(8) for i in range(8)}
     for i in range(8):
         for j in range(8):
@@ -133,8 +130,9 @@ def get_covers(brd):
     return covers
 
 
-def get_available_moves(brd, playing, can_castle=None, enpassant=None):
-    
+def get_available_moves(brd : board_dtype, playing : str, can_castle=None, enpassant=None):
+    assert(playing in ["w", "b"])
+
     enemy = "b" if playing == "w" else "w"
     covers = get_covers(brd)
     pawn_pushes = get_pawn_pushes(brd)
@@ -298,3 +296,67 @@ def get_available_moves(brd, playing, can_castle=None, enpassant=None):
     # go through moves and identify if any of them trigger draw
     
     return moves
+
+
+
+
+
+
+class Chessboard:
+
+    def __init__(self, playing=None, board=None):
+        if board:
+            self.board = board
+        else:
+            self.board = {(i,j):None for j in range(8) for i in range(8)}
+            reset_board(self.board)
+
+        self.history = []
+        self.playing = playing if playing else "w"
+        
+        self.available_moves = get_available_moves(self.board, self.playing)
+
+        if len(self.available_moves) > 0:
+            self.status = "playing"
+        else: 
+            self.status = "game_over"
+
+
+    def move(self, start, end):
+        candidates = [x for x in self.available_moves if x["start"] == start and x["end"] == end]
+        if len(candidates) == 1:
+            move = candidates[0]
+            if "special" not in move.keys():
+                history_elem = {"start":start, "end":end, "end_prev":self.board[end]}
+
+                # pawn promotion
+                if self.playing == "w" and end[1] == 7 and self.board[start][0] == "p":
+                    self.board[end] = "qw"
+                elif self.playing == "b" and end[1] == 0 and self.board[start][0] == "p":
+                    self.board[end] = "qb"
+                
+                self.board[end] = self.board[start]
+                self.board[start] = None
+                self.history.append(history_elem)
+            else:
+                if move["special"] == "castle_short":
+                    pass
+                elif move["special"] == "castle_long":
+                    pass
+                elif move["special"] == "enpassant":
+                    pass
+                elif move["special"] == "pawn_promotion":
+                    pass
+        else:
+            print("Could not find move")
+
+        self.playing = "w" if self.playing == "b" else "b"
+        self.available_moves = get_available_moves(self.board, self.playing)
+
+
+    def undo_move(self):
+        if len(self.history) > 0:
+            move = self.history[-1]
+            self.board[move["start"]] = self.board[move["end"]]
+            self.board[move["end"]] = move["end_prev"]
+            del self.history[-1]

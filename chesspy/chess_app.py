@@ -1,6 +1,7 @@
 import wx
 import chess
 import random
+import chess_ai
 
 class ChessboardPanel(wx.Panel):
 
@@ -34,7 +35,7 @@ class ChessboardPanel(wx.Panel):
             except Exception as e:
                 print(f"error loading {l} image")
                 self.piece_images[l] = None
-    
+
 
     def draw_chessboard(self, dc):
         width, height = dc.GetSize()
@@ -59,11 +60,11 @@ class ChessboardPanel(wx.Panel):
 
                 tile_color = default_white if is_white else default_black
                 
-                if self.board_comm["detail"]["select"] and (i,j) in self.board_comm["detail"]["select"]:
+                if self.board_comm["select"] and (i,j) in self.board_comm["select"]:
                     border_thickness = 6
                     border_color = wx.Colour(255,0,0)
                     
-                elif self.board_comm["detail"]["select"] and (i,j) in self.board_comm["detail"]["highlight"]:
+                elif self.board_comm["select"] and (i,j) in self.board_comm["highlight"]:
                     border_thickness = 4
                     border_color = wx.Colour(0,0,255)
                 else:
@@ -74,12 +75,15 @@ class ChessboardPanel(wx.Panel):
                 dc.SetBrush(wx.Brush(tile_color))
                 dc.DrawRectangle(x + border_thickness//2, y + border_thickness//2, self.tile_size - border_thickness, self.tile_size - border_thickness)
 
-                if self.board_comm["board"][i,j] and self.piece_images[self.board_comm["board"][i,j]]:
-                    img = self.piece_images[self.board_comm["board"][i,j]]
+                square_data = self.Parent.board.board[i,j]
+
+                if square_data and self.piece_images[square_data]:
+                    img = self.piece_images[square_data]
                     img = img.ConvertToImage()
                     img = img.Rescale(self.tile_size - 8, self.tile_size - 8)
                     img = wx.Bitmap(img)
                     dc.DrawBitmap(img, x + 4, y + 4, True)
+
 
     def on_click(self, event):
         mx, my = event.GetPosition()
@@ -97,45 +101,38 @@ class ChessFrame(wx.Frame):
     def __init__(self):
         super().__init__(None, title="Chessboard", size=(900, 700))
 
-        self.board = chess.create_board()
-        self.board_comm = {"board": self.board, "detail":{"select":None, "highlight":None}}
-
+        self.board = chess.Chessboard()
+        self.AI = chess_ai.ChessAI()
+        self.board_comm = {"select":None, "highlight":None}
         self.panel = ChessboardPanel(self, self.board_comm)
 
-        chess.reset_board(self.board)
-
         self.selected_square = None
-        self.playing = "w"
-        self.moves = chess.get_available_moves(self.board, self.playing)
-
-        self.Bind(wx.EVT_LEFT_DOWN, self.on_click)
 
         self.playing_mode = "auto"
 
+        self.Bind(wx.EVT_LEFT_DOWN, self.on_click)
+
         self.Show()
-        
+
+
     def make_move(self, move):
 
-        self.board[move["end"]] = self.board[move["start"]]
-        self.board[move["start"]] = None
-        self.playing = "w" if self.playing == "b" else "b"
+        self.board.move(move["start"], move["end"])
 
         if self.playing_mode == "auto":
-            self.moves = chess.get_available_moves(self.board, self.playing)
 
             self.panel.Refresh()
 
-            move = random.choice(self.moves)
-            self.board[move["end"]] = self.board[move["start"]]
-            self.board[move["start"]] = None
-            self.playing = "w" if self.playing == "b" else "b"
+            self.AI.copy_board(self.board)
+            #move = self.AI.decide_move()
+            move = random.choice(self.board.available_moves)
 
-        self.moves = chess.get_available_moves(self.board, self.playing)
-
+            self.board.move(move["start"], move["end"])
+        
 
     def on_click(self, event):
         data = event.GetClientData()
-        print(f"Clicked {data["idx"]}")
+        #print(f"Clicked {data["idx"]}")
         idx = data["idx"]
         
         if self.selected_square:
@@ -144,39 +141,34 @@ class ChessFrame(wx.Frame):
                 # Have selected square and have reselected to same square so deselect
 
                 self.selected_square = None
-                self.board_comm["detail"]["highlight"].clear()
-                self.board_comm["detail"]["select"].clear()
+                self.board_comm["highlight"].clear()
+                self.board_comm["select"].clear()
 
-                #print(f"Deselected the selected square: selected square is {self.selected_square}")
-
-            elif self.selected_square != idx and self.board[idx] and self.board[idx][1] == self.playing:
+            elif self.selected_square != idx and self.board.board[idx] and self.board.board[idx][1] == self.board.playing:
                 # Have a selected square but have selected another player's piece so change the selected square to this
 
                 self.selected_square = idx
-                self.board_comm["detail"]["highlight"] = [x["end"] for x in self.moves if x["start"] == self.selected_square]
-                self.board_comm["detail"]["select"] = [idx]
+                self.board_comm["highlight"] = [x["end"] for x in self.board.available_moves if x["start"] == self.selected_square]
+                self.board_comm["select"] = [idx]
 
-                #print(f"Changed to another square: selected square is {self.selected_square}")
-
-            elif self.selected_square != idx and len([x for x in self.moves if x["start"]==self.selected_square and x["end"]==idx]) > 0:
+            elif self.selected_square != idx and len([x for x in self.board.available_moves if x["start"]==self.selected_square and x["end"]==idx]) > 0:
                 # Have selected square and have clicked a valid square for the selected piece to move to
 
-                self.make_move({"start":self.selected_square, "end":idx})
-                
-                self.selected_square = None
-                self.board_comm["detail"]["highlight"].clear()
-                self.board_comm["detail"]["select"].clear()
+                move = {"start":self.selected_square, "end":idx}
 
-                #print(f"Have clicked on valid end square, taking move. selected square {self.selected_square}")
-                
-        elif self.selected_square is None and self.board[idx][1] == self.playing:
+                self.selected_square = None
+                self.board_comm["highlight"].clear()
+                self.board_comm["select"].clear()
+
+                self.make_move(move)
+
+
+        elif self.selected_square is None and self.board.board[idx][1] == self.board.playing:
             # Have no selected square but have selected a valid square containing piece owned by player so select this
 
             self.selected_square = idx
-            self.board_comm["detail"]["highlight"] = [x["end"] for x in self.moves if x["start"] == self.selected_square]
-            self.board_comm["detail"]["select"] = [idx]
-
-            #print(f"No selected square, now selecting {self.selected_square}")
+            self.board_comm["highlight"] = [x["end"] for x in self.board.available_moves if x["start"] == self.selected_square]
+            self.board_comm["select"] = [idx]
 
         self.panel.Refresh()
 
