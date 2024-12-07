@@ -2,9 +2,37 @@ from typing import Dict, Union, List, Tuple
 
 board_dtype = Dict[Tuple[int,int], Union[str,None]]
 
+# How the move history is recorded:
+# (...) indicates this might not be present in the history element
+
+# { "player":player, 
+#   "start":start_square, 
+#   "end":end_square, 
+#   "end_prev":previous_piece, 
+#   ("broke_castle_short":None), 
+#   ("broke_castle_long":None) }
+
+# { "player":player, 
+#   "special":"castle_short"
+#   "end_prev":previous_piece, 
+#   "broke_castle_short":None, 
+#   ("broke_castle_long":None) }
+
+# { "player":player, 
+#   "special":"castle_long"
+#   "end_prev":previous_piece, 
+#   ("broke_castle_short":None), 
+#   "broke_castle_long":None }
+
+deltas = {}
+deltas["b"] = [(-1,-1),(1,-1),(-1,1),(1,1)]
+deltas["r"] = [(-1,0),(1,0),(0,-1),(0,1)]
+deltas["q"] = deltas["b"] + deltas["r"]
+deltas["k"] = deltas["q"]
+
+
 def create_board():
     return {(i,j):None for j in range(8) for i in range(8)}
-
 
 def reset_board(brd):
     for i in range(8):
@@ -27,10 +55,8 @@ def i2s(i,j):
 def s2i(idx):
     return ord(idx[0]) - ord("a"), int(idx[1]) - 1
 
-
 def I2S(arr):
     return [i2s(i,j) for i,j in arr]
-
 
 def S2I(arr):
     return [s2i(idx) for idx in arr]
@@ -60,23 +86,24 @@ def print_board(brd : board_dtype):
     for i in range(8):
         print(" ".join([brd[i,j] if brd[i,j] else ("::" if (i+j)%2==0 else "  ") for j in range(8)]))
 
-
+# determines for each square whether a pawn can be pushed to that square
+# doesn't require the square to be empty, although for double push it requires the rank 3 or rank 6 is empty
 def get_pawn_pushes(brd : board_dtype):
     pawn_pushes = {(i,j): {"w":[], "b":[]} for j in range(8) for i in range(8)}
     for i in range(8):
         for j in range(8):
-            if brd[i,j] is not None and brd[i,j][0] == "p":
+            if brd[i,j] and brd[i,j][0] == "p":
                 if brd[i,j][1] == "w" and j+1 < 8:
                     pawn_pushes[i,j+1]["w"].append((i,j))
-                    if j == 1 and brd[i,j+1] == None: # Make sure that the intermediate square is empty for double push
-                        pawn_pushes[i,j+2]["w"].append((i,j))
+                    if j == 1 and brd[i,2] == None: # Make sure that the intermediate square is empty for double push
+                        pawn_pushes[i,3]["w"].append((i,j))
                 if brd[i,j][1] == "b" and 0<=j-1:
                     pawn_pushes[i,j-1]["b"].append((i,j))
-                    if j == 6 and brd[i,j-1] == None: # Make sure that the intermediate square is empty for double push
-                        pawn_pushes[i,j-2]["b"].append((i,j))
+                    if j == 6 and brd[i,5] == None: # Make sure that the intermediate square is empty for double push
+                        pawn_pushes[i,4]["b"].append((i,j))
     return pawn_pushes
 
-
+# determines for each square which pieces are covering that square (i.e. would be able to take something on that square)
 def get_covers(brd : board_dtype):
     covers = {(i,j): {"w":[], "b":[]} for j in range(8) for i in range(8)}
     for i in range(8):
@@ -110,22 +137,22 @@ def get_covers(brd : board_dtype):
     
                     deltas = [(-1,-1),(1,-1),(-1,1),(1,1)]
                     squares = raycast(brd, (i,j), deltas)
-                    for i1,j1 in squares:
-                        covers[i1,j1][owner].append((i,j))
+                    for x in squares:
+                        covers[x][owner].append((i,j))
                     
                 elif piece == "r":
     
                     deltas = [(-1,0),(1,0),(0,-1),(0,1)]
                     squares = raycast(brd, (i,j), deltas)
-                    for i1,j1 in squares:
-                        covers[i1,j1][owner].append((i,j))
+                    for x in squares:
+                        covers[x][owner].append((i,j))
     
                 elif piece == "q":
     
                     deltas = [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]
                     squares = raycast(brd, (i,j), deltas)
-                    for i1,j1 in squares:
-                        covers[i1,j1][owner].append((i,j))
+                    for x in squares:
+                        covers[x][owner].append((i,j))
 
     return covers
 
@@ -140,8 +167,9 @@ def get_available_moves(brd : board_dtype, playing : str, can_castle=None, enpas
     # determine if player is in check
     checking_pieces = []
     pinned_pieces = []
-    pinned_pieces_spans = {}
-    
+    pinned_pieces_span = {}
+    pinned_pieces_threat = {}
+
     # get position of the king (which will always exist)
     kpos = [(i,j) for j in range(8) for i in range(8) if brd[i,j] == "k"+playing][0]
     
@@ -151,32 +179,65 @@ def get_available_moves(brd : board_dtype, playing : str, can_castle=None, enpas
     # cast rays from the king to get bishops, rooks or queens that are xraying the king either directly or through a pin
     # store the intermediate spanning squares along the ray between the king and potential enemy piece
     # if there's a unobstructed ray then this will be used for checking blocking moves
-    king_deltas = [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]
+    # if the ray's is unobstructed then the enemy piece will have already been identified as a checking piece as it will cover the king's square
+    
+
     threat_pieces = ["b","r","q"]
+    
     king_rays = {}
-    for di,dj in king_deltas:
-        king_rays[di,dj] = {"friendly":[], "span":[], "enemy":None}
+    threat_180_neighbours = []
+    
+    for d in deltas["k"]:
+        di,dj = d
+        
+        king_rays[d] = {"friendly":[], "span":[], "threat":None, "180_neighbour":None}
+
+        # if there is a bishop, rook or queen checking the king on an unobstructed ray
+        # the king will not be able to move the direction 180deg to the ray as it will still be in check
+        # therefore store this square as a member of the ray to be used to prevent the king from moving to this square
+        if 0 <= kpos[0]-di < 8 and 0 <= kpos[1]-dj < 8:
+            king_rays[d]["180_neighbour"] = (kpos[0] - di, kpos[1] - dj)
+        
         i = kpos[0] + di
         j = kpos[1] + dj
+        
+        # increment along the direction of the ray from the first square in the span (not including the king)
+        # if there are any friendly pieces in the span then make note of them. If an enemy piece is hit then
+        # if this is a bishop, rook or queen then depending the delta, this will be a threat to the king. Make note of this in ray.
+        # it will be checking the king if there are no friendly pieces present but this will already be realised
+        # by the covers on the king's square. Stop the ray cast once including the first enemy piece as there is no need to go any further.
         while 0<=i<8 and 0<=j<8:
             if brd[i,j] is not None:
                 if brd[i,j][1] == playing:
-                    king_rays[di,dj]["friendly"].append((i,j))
-                elif brd[i,j][1] == enemy and brd[i,j][0] in threat_pieces:
-                    king_rays[di,dj]["enemy"] = (i,j)
+                    king_rays[d]["friendly"].append((i,j))
+                elif brd[i,j][1] == enemy:
+                    if brd[i,j][0] in threat_pieces and d in deltas[brd[i,j][0]]:
+                        king_rays[d]["threat"] = (i,j)
                     break
-            king_rays[di,dj]["span"].append((i,j))
+                
+            king_rays[d]["span"].append((i,j))
             i += di
             j += dj
-        if king_rays[di,dj]["enemy"] is not None and len(king_rays[di,dj]["friendly"]) == 1:
-            pinned_pieces.append(king_rays[di,dj]["friendly"][0])
-            pinned_pieces_spans[king_rays[di,dj]["friendly"][0]] = king_rays[di,dj]["span"]
+
+        # if there is a threat checking the king along this ray then make note of the 180_neighbour
+        # as the king cannot move here
+        if king_rays[d]["threat"] is not None and len(king_rays[d]["friendly"]) == 0:
+            threat_180_neighbours.append(king_rays[d]["180_neighbour"])
+        
+        # if there is a threat along this ray and there is only one friendly piece in the span of the ray
+        # between the king and threat, then this piece is pinned and can only move within the span of the ray
+        if king_rays[d]["threat"] is not None and len(king_rays[d]["friendly"]) == 1:
+            pinned_piece = king_rays[d]["friendly"][0]
+            pinned_pieces.append(pinned_piece)
+            pinned_pieces_span[pinned_piece] = king_rays[d]["span"]
+            pinned_pieces_threat[pinned_piece] = king_rays[d]["threat"]
     
     moves = []
     
-    # King is in check
     if len(checking_pieces) > 0:
-        
+        # KING IS IN CHECK
+        in_check = True
+
         # if 1 piece is checking the king then it can be taken
         # and if it's a bishop, rook or queen checking the king from a distance it can be blocked
         if len(checking_pieces) == 1:
@@ -187,7 +248,7 @@ def get_available_moves(brd : board_dtype, playing : str, can_castle=None, enpas
             # get the spans between the king and checking piece if the checking piece is bishop, rook or queen
             # these spans are the squares that can be used to block the direct check xray by one of the playing's pieces
             # note that the span will contain no pieces as it's a direct xray
-            spans = [ x["span"] for x in king_rays.values() if x["enemy"] == threat ]
+            spans = [ x["span"] for x in king_rays.values() if x["threat"] == threat ]
             if len(spans) > 0:
                 for x in spans[0]:
                     # look at covers on the span squares by all pieces except for king and pawns
@@ -215,23 +276,28 @@ def get_available_moves(brd : board_dtype, playing : str, can_castle=None, enpas
             
             # handle the case of an enpassant execute that takes the checking piece (if this piece is the double pushed enemy pawn)
             # there is no other case where en passant would be used to get out of check
+            '''
             if enpassant and threat == enpassant["victim"]:
                 for x in enpassant["attackers"]:
-                    moves.append({"start":x, "end":enpassant["attacker_end"], "enpassant_execute":{"victim":enpassant["victim"]}})
-        
+                    moves.append({"start":x, "end":enpassant["attacker_end"], "special":"enpassant", "enpassant_execute":{"victim":enpassant["victim"]}})
+            '''
+
         # MOVING KING AWAY
         # **************************
-        for di,dj in king_deltas:
+        for di,dj in deltas["k"]:
             i = kpos[0] + di
             j = kpos[1] + dj
 
             # check that this is a valid square, that it's not covered by enemy and that it doesn't contain friendly piece
-            if 0<=i<8 and 0<=j<8 and len(covers[i,j][enemy])==0 and ((brd[i,j][1] if brd[i,j] else enemy) == enemy):
+            # and is not the 180_neighbour of the checking piece(s)
+            if (0<=i<8 and 0<=j<8) and (len(covers[i,j][enemy])==0) and ((brd[i,j][1] if brd[i,j] else enemy) == enemy) and ((i,j) not in threat_180_neighbours):
                 moves.append({"start":kpos, "end":(i,j)})
     
-    # King is not in check
+    
     else:
-        
+        # KING IS NOT IN CHECK
+        in_check = False
+
         for i in range(8):
             for j in range(8):
                 for x in covers[i,j][playing]:
@@ -239,40 +305,45 @@ def get_available_moves(brd : board_dtype, playing : str, can_castle=None, enpas
                     valid_move = False
                     if piece == "p" and brd[i,j] and brd[i,j][1] == enemy:
                         valid_move = True
-                    elif piece == "k" and (brd[i,j] == None or brd[i,j][1] == enemy) and len(covers[i,j][enemy]) == 0:
+                    elif piece == "k" and (brd[i,j] is None or brd[i,j][1] == enemy) and len(covers[i,j][enemy]) == 0:
                         valid_move = True
-                    elif piece in ["n", "b", "r", "q"] and (brd[i,j] == None or brd[i,j][1] == enemy):
+                    elif piece in ["n", "b", "r", "q"] and (brd[i,j] is None or brd[i,j][1] == enemy):
                         valid_move = True
     
                     if valid_move:
-                        # check if the piece is pinned
-                        if x in pinned_pieces and (i,j) in pinned_pieces_spans[x]:
-                            #print(f"Pinned piece: {x}, span: {pinned_pieces_spans[x]}")
-                            moves.append({"start":x, "end":(i,j), "piece":piece})
+                        # if the piece is pinned check that the move keeps it within its span
+                        if x in pinned_pieces and ((i,j) in pinned_pieces_span[x] or (i,j) == pinned_pieces_threat[x]):     ## INCLUDE ENEMY PIECE IN THIS SPAN!!!
+                            moves.append({"start":x, "end":(i,j)})
                         elif x not in pinned_pieces:
-                            moves.append({"start":x, "end":(i,j), "piece":piece})
+                            moves.append({"start":x, "end":(i,j)})
 
                 for x in pawn_pushes[i,j][playing]:
                     if brd[i,j] is None:
-                        if x in pinned_pieces and (i,j) in pinned_pieces_spans[x]:
-                            moves.append({"start":x, "end":(i,j), "piece":"p"})
-                        else:
-                            moves.append({"start":x, "end":(i,j), "piece":"p"})
+                        # if the pawn is pinned check that the move keeps it in its span
+                        if x in pinned_pieces and (i,j) in pinned_pieces_span[x]:
+                            moves.append({"start":x, "end":(i,j)})
+                        elif x not in pinned_pieces:
+                            moves.append({"start":x, "end":(i,j)})
 
         # check for castling
         if can_castle:
-            k = 0 if playing=="w" else 7
-            if can_castle[playing]["short"] and len(covers[k,5][enemy])==0 and len(covers[k,6][enemy])==0 and brd[k,5]==None and brd[k,6]==None:
-                moves.append({"special":"castle", "info":["short", playing]})
-            if can_castle[playing]["long"] and len(covers[k,3][enemy])==0 and len(covers[k,2][enemy])==0 and brd[k,3]==None and brd[k,2]==None and brd[k,1]==None:
-                moves.append({"special":"castle", "info":["long", playing]})
+            rank = 0 if playing=="w" else 7
+            if can_castle[playing]["short"] and len(covers[5,rank][enemy])==0 and len(covers[6,rank][enemy])==0 and brd[5,rank]==None and brd[6,rank]==None:
+                moves.append({"start":(4,rank), "end":(6,rank), "special":"castle_short"})
+                print(playing, "can castle short")
+            if can_castle[playing]["long"] and len(covers[3,rank][enemy])==0 and len(covers[2,rank][enemy])==0 and brd[3,rank]==None and brd[2,rank]==None and brd[1,rank]==None:
+                moves.append({"start":(4,rank), "end":(2,rank), "special":"castle_long"})
+                print(playing, "can castle long")
         
         # check if en passant can be made against the other player
+        '''
         if enpassant:
             for x in enpassant["attackers"]:
-                moves.append({"start":x, "end":enpassant["attacker_end"], "enpassant_execute":{"victim":enpassant["victim"]}})
+                moves.append({"start":x, "end":enpassant["attacker_end"], "special":"enpassant", "enpassant_execute":{"victim":enpassant["victim"]}})
+        '''
 
     # go through and check for triggering en passant
+    '''
     for move in moves:
         if playing == "w" and brd[move["start"]] == "pw" and move["start"][1] == 1 and move["end"][1] == 3:
             enpassant_data = {"victim":move["end"], "attacker_end":(move["end"][0],2), "attackers":[]}
@@ -292,12 +363,10 @@ def get_available_moves(brd : board_dtype, playing : str, can_castle=None, enpas
                 enpassant_data["attackers"].append((i+1,j))
             if len(enpassant_data["attackers"]) > 0:
                 move["enpassant_trigger"] = enpassant_data
-    
+    '''
     # go through moves and identify if any of them trigger draw
     
-    return moves
-
-
+    return in_check, moves
 
 
 
@@ -312,51 +381,167 @@ class Chessboard:
             reset_board(self.board)
 
         self.history = []
+        self.can_castle = {"w":{"long":True, "short":True}, "b":{"long":True, "short":True}}
         self.playing = playing if playing else "w"
         
-        self.available_moves = get_available_moves(self.board, self.playing)
+        self.in_check, self.available_moves = get_available_moves(self.board, self.playing, self.can_castle)
 
-        if len(self.available_moves) > 0:
-            self.status = "playing"
-        else: 
-            self.status = "game_over"
+    def print_status(self):
+        print("")
+        print(f"Playing: {self.playing}")
+        print(f"In check: {self.in_check}")
+        print(f"-- HISTORY --")
+        for x in self.history:
+            if "special" in x.keys():
+                print(f"{x['player']} : {x['special']}")
+            else:
+                print(f'{x["player"]} : {x["start"]} -> {x["end"]} (replaced {x["end_prev"]})')
+        print("")
+
+    def copy_board(self, board):
+        for i in range(8):
+            for j in range(8):
+                self.board[i,j] = board.board[i,j]
+        
+        self.playing = board.playing
+
+        # copy the castling information
+        for p in ["w","b"]:
+            for t in ["short","long"]:
+                self.can_castle[p][t] = board.can_castle[p][t]
+        
+        # calculate the available moves and whether the playing player is in check
+        #print("Calculate moves for copied board")
+        self.in_check, self.available_moves = get_available_moves(self.board, self.playing, self.can_castle)
+        #print("Copying finished")
 
 
     def move(self, start, end):
+        
+        # get all the moves that match the start and end provided (there should only be 1 if any otherwise there is an issue)
         candidates = [x for x in self.available_moves if x["start"] == start and x["end"] == end]
+        
+        # get the rank of the playing player's backrank
+        backrank = 0 if self.playing == "w" else 7
+
         if len(candidates) == 1:
             move = candidates[0]
             if "special" not in move.keys():
-                history_elem = {"start":start, "end":end, "end_prev":self.board[end]}
+                # Non-special, normal move
+                history_elem = {"player":self.playing, "start":start, "end":end, "end_prev":self.board[end]}
 
-                # pawn promotion
-                if self.playing == "w" and end[1] == 7 and self.board[start][0] == "p":
-                    self.board[end] = "qw"
-                elif self.playing == "b" and end[1] == 0 and self.board[start][0] == "p":
-                    self.board[end] = "qb"
+                # track whether player can still castle
+                if (start == (4,backrank) or start == (0,backrank)) and self.can_castle[self.playing]["long"]:
+                    # moving the king or moving the far rook
+                    self.can_castle[self.playing]["long"] = False
+                    history_elem["broke_castle_long"] = None
+                    print(self.playing, "can no longer castle long")
+                if (start == (4,backrank) or start == (7,backrank)) and self.can_castle[self.playing]["short"]:
+                    # moving the king or moving the near rook
+                    self.can_castle[self.playing]["short"] = False
+                    history_elem["broke_castle_short"] = None
+                    print(self.playing, "can no longer castle short")
                 
-                self.board[end] = self.board[start]
+                if self.board[start][0] == "p" and end[1] == 7 - backrank:
+                    # pawn promotion
+                    self.board[end] = "q" + self.playing
+                else:
+                    # normal move
+                    self.board[end] = self.board[start]
                 self.board[start] = None
                 self.history.append(history_elem)
+
             else:
                 if move["special"] == "castle_short":
-                    pass
-                elif move["special"] == "castle_long":
-                    pass
+                    history_elem = {"player":self.playing, "special":"castle_short"}
+                    self.can_castle[self.playing]["short"] = False
+                    history_elem["broke_castle_short"] = None
+                    print(self.playing, "can no longer castle short")
+                    if self.can_castle[self.playing]["long"]: 
+                        self.can_castle[self.playing]["long"] = False
+                        history_elem["broke_castle_long"] = None
+                        print(self.playing, "can no longer castle long")
+                    
+                    self.board[4,backrank] = None
+                    self.board[7,backrank] = None
+                    self.board[6,backrank] = "k" + self.playing
+                    self.board[5,backrank] = "r" + self.playing
+                    self.history.append(history_elem)
+
+                if move["special"] == "castle_long":
+                    history_elem = {"player":self.playing, "special":"castle_long"}
+                    self.can_castle[self.playing]["long"] = False
+                    history_elem["broke_castle_long"] = None
+                    print(self.playing, "can no longer castle long")
+                    if self.can_castle[self.playing]["short"]: 
+                        self.can_castle[self.playing]["short"] = False
+                        history_elem["broke_castle_short"] = None
+                        print(self.playing, "can no longer castle short") 
+                                       
+                    self.board[4,backrank] = None
+                    self.board[0,backrank] = None
+                    self.board[2,backrank] = "k" + self.playing
+                    self.board[3,backrank] = "r" + self.playing
+                    self.history.append(history_elem)
+                    
                 elif move["special"] == "enpassant":
                     pass
-                elif move["special"] == "pawn_promotion":
-                    pass
+
         else:
             print("Could not find move")
 
         self.playing = "w" if self.playing == "b" else "b"
-        self.available_moves = get_available_moves(self.board, self.playing)
+        self.in_check, self.available_moves = get_available_moves(self.board, self.playing, self.can_castle)
 
+
+    def get_king_pos(self, player):
+        candidates = [(i,j) for j in range(8) for i in range(8) if self.board[i,j] == "k"+player]
+        if len(candidates) > 0:
+            return candidates[0]
+        else:
+            return None
 
     def undo_move(self):
         if len(self.history) > 0:
             move = self.history[-1]
-            self.board[move["start"]] = self.board[move["end"]]
-            self.board[move["end"]] = move["end_prev"]
-            del self.history[-1]
+            if "special" not in move.keys():
+                self.board[move["start"]] = self.board[move["end"]]
+                self.board[move["end"]] = move["end_prev"]
+                other_player = "w" if self.playing == "b" else "b"
+
+                if "broke_castle_long" in move.keys():
+                    self.can_castle[other_player]["long"] = True
+                    print(other_player,"can castle long again")
+                if "broke_castle_short" in move.keys():
+                    self.can_castle[other_player]["short"] = True
+                    print(other_player,"can castle short again")
+                del self.history[-1]
+            else:
+                if move["special"][:len("castle")] == "castle":
+                    castle_type = move["special"][len("castle")+1:]
+                    backrank = 0 if move["player"] == "w" else 7
+                    other_player = "w" if self.playing == "b" else "b"
+                    assert(move["player"] == other_player) # this is just for continuity. I expect the move player and other player to match up
+                    print(f"Undoing castle, type {castle_type} for player {other_player}")
+                    
+                    if castle_type == "short":
+                        self.board[4,backrank] = "k" + move["player"]
+                        self.board[7,backrank] = "r" + move["player"]
+                        self.board[5,backrank] = None
+                        self.board[6,backrank] = None
+                    elif castle_type == "long":
+                        self.board[4,backrank] = "k" + move["player"]
+                        self.board[0,backrank] = "r" + move["player"]
+                        self.board[2,backrank] = None
+                        self.board[3,backrank] = None
+
+                    if "broke_castle_long" in move.keys():
+                        self.can_castle[move["player"]]["long"] = True
+                        print(move["player"],"can castle long again")
+                    if "broke_castle_short" in move.keys():
+                        self.can_castle[move["player"]]["short"] = True
+                        print(move["player"],"can castle short again")
+                    del self.history[-1]
+                        
+            self.playing = "w" if self.playing == "b" else "b"
+            self.in_check, self.available_moves = get_available_moves(self.board, self.playing, self.can_castle) 

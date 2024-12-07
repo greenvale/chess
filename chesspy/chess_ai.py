@@ -1,16 +1,14 @@
 import chess
+import random 
 
 class ChessAI:
 
     def __init__(self):
         self.board = chess.Chessboard()
-        
-    def copy_board(self, board : chess.Chessboard):        
-        for i in range(8):
-            for j in range(8):
-                self.board.board[i,j] = board.board[i,j]
-        self.board.history.clear()
     
     def decide_move(self):
-
-        pass
+        if len(self.board.available_moves) > 0:
+            move = random.choice(self.board.available_moves)
+            return move
+        else:
+            return None
